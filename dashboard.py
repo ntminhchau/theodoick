@@ -8,15 +8,17 @@ from bs4 import BeautifulSoup
 from transformers import pipeline
 import plotly.graph_objects as go
 from backtesting import Backtest, Strategy
-from backtesting.lib import crossover 
+from backtesting.lib import crossover
 import warnings
 from vnstock import Listing, Quote
 import numpy as np
-import io 
+import io
 from sklearn.ensemble import IsolationForest
 from sklearn.preprocessing import StandardScaler
-import re 
+import re
 from urllib.parse import quote_plus
+import time # Import thư viện time
+from requests.exceptions import ConnectionError, Timeout # Import các loại lỗi cụ thể
 
 # --- CẤU HÌNH ---
 warnings.filterwarnings('ignore')
@@ -28,53 +30,58 @@ st.set_page_config(layout="wide", page_title="Dashboard Phân tích AI")
 @st.cache_data(ttl=86400) # Cache 1 ngày
 def load_ticker_list():
     """Tải danh sách mã cổ phiếu từ tất cả các sàn."""
-    try:
-        listing = Listing()
-        hose_symbols = listing.symbols_by_group('HOSE').tolist()
-        hnx_symbols = listing.symbols_by_group('HNX').tolist()
-        upcom_symbols = listing.symbols_by_group('UPCOM').tolist()
-        return sorted(list(set(hose_symbols + hnx_symbols + upcom_symbols)))
-    except Exception as e:
-        st.error(f"Lỗi tải danh sách mã cổ phiếu: {e}")
-        return ['FPT', 'VNM', 'HPG', 'VCB', 'MWG']
-
-@st.cache_data(ttl=14400) # Cache 4 giờ
-def get_default_scan_list():
-    """Lấy danh sách cổ phiếu từ VN30 và VN100, ổn định hơn."""
-    try:
-        listing = Listing()
-        vn30_symbols = listing.symbols_by_group('VN30').tolist()
-        vn100_symbols = listing.symbols_by_group('VN100').tolist()
-        combined_list = sorted(list(set(vn30_symbols + vn100_symbols)))
-        return combined_list
-    except Exception as e:
-        st.warning(f"Không thể lấy danh sách VN30/VN100: {e}")
-        return ['FPT','VNM','HPG', 'VCB', 'MWG', 'ACB', 'BID', 'CTG', 'GVR', 'HDB', 'MBB', 'MSN', 'SSI', 'STB', 'TCB', 'TPB', 'VHM', 'VIC', 'VJC', 'VPB']
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            listing = Listing()
+            hose_symbols = listing.symbols_by_group('HOSE').tolist()
+            hnx_symbols = listing.symbols_by_group('HNX').tolist()
+            upcom_symbols = listing.symbols_by_group('UPCOM').tolist()
+            return sorted(list(set(hose_symbols + hnx_symbols + upcom_symbols)))
+        except (ConnectionError, Timeout) as e:
+            st.warning(f"Lỗi kết nối khi tải danh sách mã cổ phiếu (Thử lại {attempt + 1}/{max_retries}): {e}")
+            if attempt < max_retries - 1:
+                time.sleep(2 ** attempt) # Độ trễ lũy thừa: 1s, 2s, 4s
+            else:
+                st.error(f"Thử lại thất bại: Lỗi tải danh sách mã cổ phiếu: {e}")
+                return ['FPT', 'VNM', 'HPG', 'VCB', 'MWG'] # Trả về danh sách mặc định nếu thất bại
+        except Exception as e:
+            st.error(f"Lỗi tải danh sách mã cổ phiếu: {e}")
+            return ['FPT', 'VNM', 'HPG', 'VCB', 'MWG']
 
 @st.cache_data(ttl=900) # Cache 15 phút
 def get_stock_data(ticker, days_back=730):
     """Lấy dữ liệu lịch sử cho một mã cổ phiếu hoặc chỉ số."""
-    try:
-        quote = Quote(symbol=ticker)
-        df = quote.history(
-            start=(datetime.now() - timedelta(days=days_back)).strftime('%Y-%m-%d'),
-            end=datetime.now().strftime('%Y-%m-%d'),
-            resolution='1D'
-        )
-        if df.empty: return pd.DataFrame()
-        
-        df.rename(columns={'time': 'Date', 'open': 'Open', 'high': 'High', 'low': 'Low', 'close': 'Close', 'volume': 'Volume'}, inplace=True)
-        df['Date'] = pd.to_datetime(df['Date'])
-        df.set_index('Date', inplace=True)
-        
-        for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
-            df[col] = pd.to_numeric(df[col], errors='coerce')
-        
-        df.dropna(subset=['Open', 'Close'], inplace=True)
-        return df
-    except Exception as e:
-        st.error(f"Lỗi khi tải dữ liệu cho {ticker}: {e}")
-        return pd.DataFrame()
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            quote = Quote(symbol=ticker)
+            df = quote.history(
+                start=(datetime.now() - timedelta(days=days_back)).strftime('%Y-%m-%d'),
+                end=datetime.now().strftime('%Y-%m-%d'),
+                resolution='1D'
+            )
+            if df.empty: return pd.DataFrame() # Vẫn trả về DataFrame rỗng nếu không có dữ liệu
+            
+            df.rename(columns={'time': 'Date', 'open': 'Open', 'high': 'High', 'low': 'Low', 'close': 'Close', 'volume': 'Volume'}, inplace=True)
+            df['Date'] = pd.to_datetime(df['Date'])
+            df.set_index('Date', inplace=True)
+            
+            for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+            
+            df.dropna(subset=['Open', 'Close'], inplace=True)
+            return df
+        except (ConnectionError, Timeout) as e:
+            st.warning(f"Lỗi kết nối khi tải dữ liệu cho {ticker} (Thử lại {attempt + 1}/{max_retries}): {e}")
+            if attempt < max_retries - 1:
+                time.sleep(2 ** attempt) # Độ trễ lũy thừa
+            else:
+                st.error(f"Thử lại thất bại: Lỗi khi tải dữ liệu cho {ticker}: {e}")
+                return pd.DataFrame() # Trả về DataFrame rỗng nếu thất bại
+        except Exception as e:
+            st.error(f"Lỗi khi tải dữ liệu cho {ticker}: {e}")
+            return pd.DataFrame()
 
 def get_last_price_info(ticker):
     """Lấy thông tin giá gần nhất từ dữ liệu lịch sử."""
@@ -330,27 +337,24 @@ elif page == "📰 Tin tức Liên quan":
 elif page == "🌐 Tổng quan Tin tức Thị trường":
     st.subheader("Tổng quan Tin tức các Cổ phiếu Hàng đầu")
     default_list = get_default_scan_list()
-
+    
     st.markdown(f"**Tổng hợp tin tức mới nhất từ {len(default_list)} cổ phiếu trong rổ VN30 & VN100.**")
-
+    
     if st.button("Bắt đầu quét tin tức thị trường"):
         with st.spinner("Đang quét tin tức..."):
             market_news = []
-            # Đặt một tập hợp để theo dõi các ticker đã quét
             scanned_tickers_for_news = set() 
             progress_bar = st.progress(0, text="Bắt đầu quét...")
             for i, ticker in enumerate(default_list):
                 progress_bar.progress((i + 1) / len(default_list), text=f"Đang quét tin tức: {ticker}")
                 articles = search_google_news(ticker)
                 if articles:
-                    # Chỉ lấy tin mới nhất của mỗi mã và đảm bảo không trùng lặp
                     if ticker not in scanned_tickers_for_news:
                         latest_news = articles[0]
                         market_news.append({'ticker': ticker, 'title': latest_news['title'], 'link': latest_news['link']})
-                        scanned_tickers_for_news.add(ticker) # Đánh dấu là đã quét
-
-                # THÊM ĐỘ TRỄ Ở ĐÂY
-                time.sleep(2) # Đợi 2 giây sau mỗi yêu cầu. Bạn có thể điều chỉnh giá trị này.
+                        scanned_tickers_for_news.add(ticker)
+                
+                time.sleep(2) # Đảm bảo có độ trễ giữa các yêu cầu Google News
 
             progress_bar.empty()
             st.session_state['market_news_overview'] = market_news
