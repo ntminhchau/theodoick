@@ -9,3 +9,4 @@ backtesting==0.6.4
 vnstock==3.2.6
 numpy
 scikit-learn==1.7.1
+setuptools
