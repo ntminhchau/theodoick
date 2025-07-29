@@ -7,6 +7,6 @@ transformers==4.54.0
 plotly==6.2.0
 backtesting==0.6.4
 vnstock==3.2.6
-numpy
+numpy==1.26.4
 scikit-learn==1.7.1
 setuptools
