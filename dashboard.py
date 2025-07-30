@@ -449,20 +449,6 @@ with st.sidebar:
     page = st.radio("Chọn chức năng:", page_options)
     st.divider()
 
-    vnindex_info = get_last_price_info('VNINDEX')
-    if vnindex_info:
-        vnindex_change_color = "green" if vnindex_info['change'] > 0 else "red" if vnindex_info['change'] < 0 else "gray"
-        # Sử dụng markdown thay vì metric để kiểm soát tốt hơn và giữ gọn
-        st.markdown(f"**VN-Index:** <span style='color:black;'>{vnindex_info['price']:,.2f}</span>", unsafe_allow_html=True)
-        st.markdown(f"**Thay đổi:** <span style='color:{vnindex_change_color};'>{vnindex_info['change']:+.2f} ({vnindex_info['pct_change']:.2f}%)</span>", unsafe_allow_html=True)
-    else:
-        st.info("Không thể tải dữ liệu VN-Index.")
-
-    market_status, status_color = get_market_condition()
-    st.markdown(f"**Xu hướng chung:** <span style='color:{status_color};'> {market_status}</span>", unsafe_allow_html=True)
-    st.divider() # Thêm một đường phân cách sau phần mới trong sidebar
-    # --- KẾT THÚC ĐOẠN MÃ ĐƯỢC DI CHUYỂN ---
-
     st.info("Dashboard được Chou xây dựng để phân tích chứng khoán.")
 
 # Tải dữ liệu chính một lần
@@ -655,19 +641,28 @@ elif page == "🚨 Cảnh báo":
     col_vn30, col_vn100 = st.columns(2) # Tạo 2 cột cho 2 nút
 
     with col_vn30:
-        if st.button("Quét VN30"):
-            st.info("Đang quét các mã trong rổ VN30...")
-            listing_api = Listing() # Khởi tạo Listing API
-            vn30_tickers = listing_api.symbols_by_group('VN30').tolist()
-            scan_alerts_for_tickers(vn30_tickers)
+    if st.button("Quét VN30"):
+        st.info("Đang quét các mã trong rổ VN30...")
+        # Đọc danh sách mã từ file, không dùng vnstock
+        try:
+            with open('default_tickers.txt', 'r') as f:
+                # Lọc ra các mã VN30 nếu cần, nhưng dùng chung list VN100 cũng được
+                vn_tickers = [line.strip() for line in f] 
+            scan_alerts_for_tickers(vn_tickers) # Giả sử vn30 nằm trong default_tickers
+        except FileNotFoundError:
+            st.error("Không tìm thấy file default_tickers.txt")
 
     with col_vn100:
-        if st.button("Quét VN100"):
-            st.warning("Quét VN100 có thể mất nhiều thời gian hơn và tiềm ẩn nguy cơ lỗi do số lượng mã lớn và giới hạn truy cập dữ liệu.")
-            st.info("Đang quét các mã trong rổ VN100...")
-            listing_api = Listing() # Khởi tạo Listing API
-            vn100_tickers = listing_api.symbols_by_group('VN100').tolist()
+    if st.button("Quét VN100"):
+        st.warning("Quét VN100 có thể mất nhiều thời gian hơn.")
+        st.info("Đang quét các mã trong rổ VN100...")
+        # Đọc danh sách mã từ file, không dùng vnstock
+        try:
+            with open('default_tickers.txt', 'r') as f:
+                vn100_tickers = [line.strip() for line in f]
             scan_alerts_for_tickers(vn100_tickers)
+        except FileNotFoundError:
+            st.error("Không tìm thấy file default_tickers.txt")
 
     st.divider()
 
