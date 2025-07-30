@@ -1,0 +1,10 @@
+# Môi trường ảo của Python
+venv/
+*.venv
+__pycache__/
+
+# File biến môi trường - TUYỆT ĐỐI KHÔNG UPLOAD FILE NÀY
+.env
+
+# File của hệ điều hành
+.DS_Store
