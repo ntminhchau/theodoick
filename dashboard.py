@@ -640,23 +640,23 @@ elif page == "🚨 Cảnh báo":
 
     col_vn30, col_vn100 = st.columns(2) # Tạo 2 cột cho 2 nút
 
-    with col_vn30:
+# CODE ĐÃ SỬA
+with col_vn30:
+    # Thêm thụt lề ở đây
     if st.button("Quét VN30"):
         st.info("Đang quét các mã trong rổ VN30...")
-        # Đọc danh sách mã từ file, không dùng vnstock
         try:
             with open('default_tickers.txt', 'r') as f:
-                # Lọc ra các mã VN30 nếu cần, nhưng dùng chung list VN100 cũng được
                 vn_tickers = [line.strip() for line in f] 
-            scan_alerts_for_tickers(vn_tickers) # Giả sử vn30 nằm trong default_tickers
+            scan_alerts_for_tickers(vn_tickers)
         except FileNotFoundError:
             st.error("Không tìm thấy file default_tickers.txt")
 
-    with col_vn100:
+with col_vn100:
+    # Thêm thụt lề ở đây
     if st.button("Quét VN100"):
         st.warning("Quét VN100 có thể mất nhiều thời gian hơn.")
         st.info("Đang quét các mã trong rổ VN100...")
-        # Đọc danh sách mã từ file, không dùng vnstock
         try:
             with open('default_tickers.txt', 'r') as f:
                 vn100_tickers = [line.strip() for line in f]
