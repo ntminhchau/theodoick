@@ -16,20 +16,17 @@ from sklearn.ensemble import IsolationForest
 from sklearn.preprocessing import StandardScaler
 import re
 from urllib.parse import quote_plus
-import time 
-import sqlite3 # Thêm thư viện để đọc database
+import time
+import sqlite3
 from supabase import create_client
 
 # --- CẤU HÌNH ---
 warnings.filterwarnings('ignore')
 pd.options.mode.chained_assignment = None
 st.set_page_config(layout="wide", page_title="Dashboard Phân tích AI")
-PREDICTIONS_DB_FILE = "ai_predictions.db" # Tên file database chứa kết quả dự báo
+PREDICTIONS_DB_FILE = "ai_predictions.db"
 
-# --- CÁC HÀM TIỆN ÍCH VÀ LẤY DỮ LIỆỆU ---
-
-
-# --- KẾT NỐI SUPABASE VÀ CÁC HÀM LẤY DỮ LIỆU MỚI ---
+# --- KẾT NỐI SUPABASE VÀ CÁC HÀM LẤY DỮ LIỆU ---
 
 @st.cache_resource
 def init_connection():
@@ -39,38 +36,37 @@ def init_connection():
         key = st.secrets["SUPABASE_KEY"]
         return create_client(url, key)
     except Exception as e:
-        st.error(f"Lỗi kết nối Supabase: {e}. Vui lòng kiểm tra file secrets.toml.")
+        st.error(f"Lỗi kết nối Supabase: {e}. Vui lòng kiểm tra file secrets.")
         return None
 
 supabase_client = init_connection()
 
-@st.cache_data(ttl=86400) # Cache 1 ngày
+@st.cache_data(ttl=86400)
 def load_ticker_list():
     """Tải danh sách mã cổ phiếu từ file text."""
     try:
-        with open('all_tickers.txt', 'r') as f:
+        with open('all_tickers.txt', 'r', encoding='utf-8') as f:
             return [line.strip() for line in f]
     except FileNotFoundError:
         st.error("Lỗi: Không tìm thấy file 'all_tickers.txt'.")
-        return ['FPT', 'VNM', 'HPG', 'VCB', 'MWG'] # Trả về danh sách mặc định
+        return ['FPT', 'VNM', 'HPG', 'VCB', 'MWG']
 
-@st.cache_data(ttl=14400) # Cache 4 giờ
+@st.cache_data(ttl=14400)
 def get_default_scan_list():
     """Lấy danh sách cổ phiếu mặc định từ file text."""
     try:
-        with open('default_tickers.txt', 'r') as f:
+        with open('default_tickers.txt', 'r', encoding='utf-8') as f:
             return [line.strip() for line in f]
     except FileNotFoundError:
         st.warning("Lỗi: Không tìm thấy file 'default_tickers.txt'.")
-        return ['FPT','VNM','HPG', 'VCB', 'MWG'] # Trả về danh sách mặc định
+        return ['FPT','VNM','HPG', 'VCB', 'MWG']
 
-@st.cache_data(ttl=900) # Cache 15 phút
+@st.cache_data(ttl=900)
 def get_stock_data(ticker, days_back=730):
     """Lấy dữ liệu lịch sử cho một mã cổ phiếu từ Supabase."""
     if supabase_client is None:
         return pd.DataFrame()
     try:
-        # Lọc dữ liệu từ ngày cần thiết
         start_date = (datetime.now() - timedelta(days=days_back)).strftime('%Y-%m-%d')
         
         response = supabase_client.table('historical_data').select("*") \
@@ -83,19 +79,15 @@ def get_stock_data(ticker, days_back=730):
         if df.empty:
             return pd.DataFrame()
             
-        # Xử lý dữ liệu
         df.rename(columns={'time': 'Date', 'open': 'Open', 'high': 'High', 'low': 'Low', 'close': 'Close', 'volume': 'Volume'}, inplace=True)
         df['Date'] = pd.to_datetime(df['Date'])
         df.set_index('Date', inplace=True)
-        
-        # Bỏ cột 'ticker' không cần thiết
         df = df.drop(columns=['ticker'])
         
         return df
     except Exception as e:
         st.error(f"Lỗi khi lấy dữ liệu từ DB cho {ticker}: {e}")
         return pd.DataFrame()
-
 
 def get_last_price_info(ticker):
     """Lấy thông tin giá gần nhất từ dữ liệu lịch sử."""
@@ -120,87 +112,6 @@ def add_technical_indicators(df):
     df.ta.bbands(length=20, append=True)
     df['Highest_High_20'] = df['High'].rolling(20).max()
     return df
-@st.cache_data(ttl=300) # Cache 5 phút
-def get_top_movers(num_movers=5, source_list=None):
-    """
-    Lấy danh sách các mã tăng/giảm mạnh nhất trong phiên cuối cùng.
-    :param num_movers: Số lượng mã tăng/giảm mạnh muốn hiển thị.
-    :param source_list: Danh sách các mã để quét (mặc định là VN30 & VN100).
-    """
-    if source_list is None:
-        source_list = get_default_scan_list()
-
-    movers = []
-    scan_progress_text = "Đang quét dữ liệu giá cho các mã..."
-    scan_progress_bar = st.progress(0, text=scan_progress_text)
-
-    for i, ticker in enumerate(source_list):
-        scan_progress_bar.progress((i + 1) / len(source_list), text=f"Đang quét: {ticker}")
-        try:
-            df_recent = get_stock_data(ticker, days_back=2)
-            if df_recent.empty or len(df_recent) < 2:
-                continue
-
-            last_day = df_recent.iloc[-1]
-            prev_day = df_recent.iloc[-2]
-
-            price = last_day['Close']
-            prev_price = prev_day['Close']
-            volume = last_day['Volume']
-
-            if prev_price > 0:
-                change_pct = ((price - prev_price) / prev_price) * 100
-                movers.append({
-                    "Mã": ticker,
-                    "Giá cuối": f"{price:,.1f}",
-                    "Thay đổi (%)": f"{change_pct:+.2f}",
-                    "Khối lượng": f"{volume:,.0f}"
-                })
-        except Exception as e:
-            continue
-
-    scan_progress_bar.empty()
-
-    if not movers:
-        return pd.DataFrame(), pd.DataFrame()
-
-    df_movers = pd.DataFrame(movers)
-    df_movers['Thay đổi (%)'] = pd.to_numeric(df_movers['Thay đổi (%)'])
-
-    top_gainers = df_movers.sort_values(by="Thay đổi (%)", ascending=False).head(num_movers)
-    top_losers = df_movers.sort_values(by="Thay đổi (%)", ascending=True).head(num_movers)
-
-    top_gainers['Thay đổi (%)'] = top_gainers['Thay đổi (%)'].apply(lambda x: f"{x:+.2f}%")
-    top_losers['Thay đổi (%)'] = top_losers['Thay đổi (%)'].apply(lambda x: f"{x:+.2f}%")
-
-    return top_gainers, top_losers
-
-# --- CÁC HÀM AI VÀ PHÂN TÍCH ---
-
-@st.cache_data
-def get_market_condition():
-    """Phân tích và trả về xu hướng thị trường chung."""
-    df_vni = get_stock_data('VNINDEX', days_back=365)
-    if df_vni.empty or len(df_vni) < 200:
-        return "Không đủ dữ liệu", "gray"
-    df_vni = add_technical_indicators(df_vni)
-    last = df_vni.iloc[-1]
-    price, sma50, sma200, adx = last['Close'], last['SMA_50'], last['SMA_200'], last['ADX_14']
-    if adx > 25 and price > sma50 and sma50 > sma200: return "Tăng mạnh", "green"
-    elif adx > 25 and price < sma50 and sma50 < sma200: return "Giảm mạnh", "red"
-    elif adx < 20: return "Sideways / Đi ngang", "orange"
-    elif price > sma50 and price > sma200: return "Tăng yếu", "#26A69A"
-    elif price < sma50 and price < sma200: return "Giảm yếu", "#FFB74D"
-    else: return "Không xác định", "gray"
-
-@st.cache_resource
-def load_sentiment_model():
-    """Tải mô hình AI phân tích cảm xúc."""
-    try:
-        return pipeline("sentiment-analysis", model="nlptown/bert-base-multilingual-uncased-sentiment")
-    except Exception as e:
-        st.error(f"Lỗi tải mô hình AI: {e}")
-        return None
 
 @st.cache_data(ttl=3600)
 def search_google_news(ticker):
@@ -227,58 +138,24 @@ def search_google_news(ticker):
         print(f"Lỗi khi tìm kiếm tin tức trên Google cho {ticker}: {e}")
         return []
 
-def analyze_sentiment(articles, model):
-    """Phân tích cảm xúc của các tiêu đề bài báo."""
-    sentiments = []
-    for article in articles:
-        try:
-            result = model(article['title'])[0]
-            score = int(result['label'].split()[0])
-            sentiment = 'Tích cực' if score >= 4 else 'Tiêu cực' if score <= 2 else 'Trung tính'
-            sentiment_result = {'title': article['title'], 'link': article['link'], 'sentiment': sentiment}
-            if 'ticker' in article:
-                sentiment_result['ticker'] = article['ticker']
-            sentiments.append(sentiment_result)
-        except Exception: continue
-    return sentiments
-
-@st.cache_data
-def detect_anomalies(_df):
-    """AI Phát hiện giao dịch bất thường."""
-    if _df.empty or len(_df) < 50: return None
-    df = _df.copy()
-    df['Price_Change'] = df['Close'].pct_change().abs() * 100
-    df.dropna(inplace=True)
-    features = ['Volume', 'Price_Change']
-    model = IsolationForest(contamination=0.05, random_state=42)
-    df['Anomaly'] = model.fit_predict(df[features])
-    return df[df['Anomaly'] == -1]
-
-# Start of the modified scan_alerts_for_tickers function
-# ... (các hàm AI và phân tích khác) ...
-
 def scan_alerts_for_tickers(tickers):
     alerts = []
     progress_bar = st.progress(0, text="Bắt đầu quét...")
     for i, ticker in enumerate(tickers):
-        df = get_stock_data(ticker, days_back=200)
-        df = add_technical_indicators(df)
         progress_bar.progress((i + 1) / len(tickers), text=f"Đang quét: {ticker}")
-        
-        if df.empty:
+        df = get_stock_data(ticker, days_back=250) 
+        if df.empty or len(df) < 50:
             continue
+            
+        df = add_technical_indicators(df)
         
-        # Chỉ tiếp tục nếu có đủ dữ liệu cho các chỉ báo dài hạn
-        # Hoặc bạn có thể bỏ qua các cảnh báo liên quan đến MA200/ADX nếu không đủ dữ liệu
-        if len(df) < 200 or 'SMA_200' not in df.columns or 'ADX_14' not in df.columns:
-            # Nếu không đủ dữ liệu cho các chỉ báo dài hạn, chúng ta vẫn có thể quét các tín hiệu ngắn hạn.
-            # Ghi chú: Một số cảnh báo (xu hướng, giữ mua/bán) sẽ dựa vào SMA200/ADX.
-            # Các cảnh báo này sẽ không được kích hoạt nếu thiếu dữ liệu/chỉ báo.
-            pass # Không continue ở đây để các cảnh báo ngắn hạn vẫn có thể chạy
+        required_cols = ['SMA_20', 'SMA_50', 'MACD_12_26_9', 'RSI_14']
+        if not all(col in df.columns for col in required_cols):
+            continue
 
         last = df.iloc[-1]
-        prev = df.iloc[-2] if len(df) > 1 else last
-        
+        prev = df.iloc[-2]
+
         price = last['Close']
         sma20 = last.get('SMA_20')
         sma50 = last.get('SMA_50')
@@ -357,10 +234,10 @@ def scan_alerts_for_tickers(tickers):
 
     progress_bar.empty()
     if alerts:
-        df_alerts = pd.DataFrame(alerts)
+        df_alerts = pd.DataFrame(alerts).drop_duplicates(subset=['Mã', 'Tín hiệu'])
         st.dataframe(df_alerts.sort_values(by=["Mã", "Tín hiệu"]))
     else:
-        st.info("Không có tín hiệu giao dịch nổi bật cho các mã đã chọn.")# End of the modified scan_alerts_for_tickers function
+        st.info("Không có tín hiệu giao dịch nổi bật cho các mã đã chọn.")
 
 # --- BACKTESTING ---
 class SmaCross(Strategy):
@@ -418,12 +295,12 @@ def analyze_backtest_results(stats):
 def get_all_predictions_from_db():
     """Đọc toàn bộ báo cáo dự báo từ file SQLite."""
     try:
-        with sqlite3.connect(PREDICTIONS_DB_FILE) as conn:
+        with sqlite3.connect(f"file:{PREDICTIONS_DB_FILE}?mode=ro", uri=True) as conn:
             df = pd.read_sql_query("SELECT * FROM predictions", conn)
         return df
     except Exception as e:
         st.error(f"Lỗi khi đọc file báo cáo '{PREDICTIONS_DB_FILE}': {e}")
-        st.warning("Vui lòng đảm bảo bạn đã chạy file `prediction_reporter.py` thành công và file database nằm trong cùng thư mục.")
+        st.warning("Vui lòng đảm bảo bạn đã tải file `ai_predictions.db` lên GitHub.")
         return pd.DataFrame()
 
 def get_single_prediction(df_preds, ticker):
@@ -443,12 +320,20 @@ st.title("📈 Dashboard Phân tích Cổ phiếu Tích hợp AI")
 with st.sidebar:
     st.header("Bảng điều khiển")
     ticker_list = load_ticker_list()
-    selected_ticker = st.selectbox("Chọn mã cổ phiếu:", ticker_list, index=ticker_list.index('FPT') if 'FPT' in ticker_list else 0)
+    if ticker_list:
+        # Tìm index của 'FPT' một cách an toàn
+        try:
+            fpt_index = ticker_list.index('FPT')
+        except ValueError:
+            fpt_index = 0
+        selected_ticker = st.selectbox("Chọn mã cổ phiếu:", ticker_list, index=fpt_index)
+    else:
+        selected_ticker = st.text_input("Nhập mã cổ phiếu:", 'FPT')
+    
     st.divider()
     page_options = ["📊 Phân tích Kỹ thuật", "🤖 Báo cáo Dự báo AI", "📰 Tin tức Liên quan", "🔬 Backtesting", "🚨 Cảnh báo"]
     page = st.radio("Chọn chức năng:", page_options)
     st.divider()
-
     st.info("Dashboard được Chou xây dựng để phân tích chứng khoán.")
 
 # Tải dữ liệu chính một lần
@@ -457,10 +342,9 @@ data_ind = add_technical_indicators(data.copy())
 df_all_predictions = get_all_predictions_from_db()
 
 # --- HEADER THÔNG TIN CHUNG ---
-st.header(f"Tổng quan: {selected_ticker}") # Giữ nguyên header này
+st.header(f"Tổng quan: {selected_ticker}")
 price_info = get_last_price_info(selected_ticker)
 if price_info:
-    # Chỉnh sửa dòng này để các cột có tỷ lệ chiều rộng 2, 2, 3, 3
     col1, col2, col3, col4 = st.columns([2, 2, 3, 3])
     price_str = f"{price_info['price']:,.1f}"
     change_str = f"{price_info['change']:,.1f} ({price_info['pct_change']:.2f}%)"
@@ -469,9 +353,9 @@ if price_info:
     col3.metric("Cao/Thấp", f"{price_info['high']:,.1f} / {price_info['low']:,.1f}")
     col4.metric("KLGD", f"{price_info['volume']:,.0f}")
 else:
-    st.warning("Không thể lấy thông tin giá gần nhất.")
+    st.warning(f"Không thể lấy thông tin giá gần nhất cho {selected_ticker}.")
 
-# TÍNH NĂNG MỚI: Hiển thị dự báo AI ngay tại header
+# Hiển thị dự báo AI ngay tại header
 prediction_info = get_single_prediction(df_all_predictions, selected_ticker)
 if prediction_info is not None:
     pred_text = prediction_info['DuBao']
@@ -482,7 +366,7 @@ if prediction_info is not None:
         prob = prediction_info['XacSuatGiam']
         st.error(f"**Dự báo AI (5 ngày tới):** 📉 {pred_text} (Xác suất: {prob}) - {prediction_info['LyGiai']}")
 else:
-    st.info("Chưa có dữ liệu dự báo AI cho mã này trong báo cáo.")
+    st.info(f"Chưa có dữ liệu dự báo AI cho {selected_ticker} trong báo cáo.")
 
 st.divider()
 
@@ -492,19 +376,10 @@ if page == "📊 Phân tích Kỹ thuật":
     st.subheader("Biểu đồ giá")
     if not data_ind.empty:
         fig = go.Figure(data=[go.Candlestick(x=data_ind.index, open=data_ind['Open'], high=data_ind['High'], low=data_ind['Low'], close=data_ind['Close'], name='Giá')])
-        fig.add_trace(go.Scatter(x=data_ind.index, y=data_ind['SMA_20'], mode='lines', name='MA20'))
-        fig.add_trace(go.Scatter(x=data_ind.index, y=data_ind['SMA_50'], mode='lines', name='MA50'))
+        fig.add_trace(go.Scatter(x=data_ind.index, y=data_ind.get('SMA_20'), mode='lines', name='MA20'))
+        fig.add_trace(go.Scatter(x=data_ind.index, y=data_ind.get('SMA_50'), mode='lines', name='MA50'))
         fig.update_layout(xaxis_rangeslider_visible=False)
         st.plotly_chart(fig, use_container_width=True)
-        
-        st.subheader("Phân tích Giao dịch Bất thường")
-        with st.spinner("AI đang phân tích các giao dịch bất thường..."):
-            anomalies = detect_anomalies(data.copy())
-        if anomalies is not None and not anomalies.empty:
-            st.warning(f"Phát hiện {len(anomalies)} phiên giao dịch có dấu hiệu bất thường (KLGD hoặc biên độ giá đột biến):")
-            st.dataframe(anomalies[['Volume', 'Price_Change']])
-        else:
-            st.success("Không phát hiện giao dịch bất thường đáng chú ý.")
     else:
         st.warning("Không có dữ liệu để hiển thị.")
 
@@ -536,7 +411,7 @@ elif page == "🤖 Báo cáo Dự báo AI":
         
         st.dataframe(df_sorted)
     else:
-        st.warning("Không tìm thấy file báo cáo. Vui lòng chạy `prediction_reporter.py` trước.")
+        st.warning("Không tìm thấy file báo cáo. Vui lòng chạy `prediction_reporter.py` trước và tải file lên GitHub.")
 
 elif page == "📰 Tin tức Liên quan":
     st.subheader(f"Tin tức Liên quan đến {selected_ticker}")
@@ -546,38 +421,6 @@ elif page == "📰 Tin tức Liên quan":
             st.markdown(f"- [{article['title']}]({article['link']})")
     else:
         st.info("Không tìm thấy tin tức cho mã này.")
-
-elif page == "🌐 Tổng quan Tin tức Thị trường":
-    st.subheader("Tổng quan Tin tức các Cổ phiếu Hàng đầu")
-    default_list = get_default_scan_list()
-
-    st.markdown(f"**Tổng hợp tin tức mới nhất từ {len(default_list)} cổ phiếu trong rổ VN30 & VN100.**")
-
-    if st.button("Bắt đầu quét tin tức thị trường"):
-        with st.spinner("Đang quét tin tức..."):
-            market_news = []
-            # Đặt một tập hợp để theo dõi các ticker đã quét
-            scanned_tickers_for_news = set() 
-            progress_bar = st.progress(0, text="Bắt đầu quét...")
-            for i, ticker in enumerate(default_list):
-                progress_bar.progress((i + 1) / len(default_list), text=f"Đang quét tin tức: {ticker}")
-                articles = search_google_news(ticker)
-                if articles:
-                    # Chỉ lấy tin mới nhất của mỗi mã và đảm bảo không trùng lặp
-                    if ticker not in scanned_tickers_for_news:
-                        latest_news = articles[0]
-                        market_news.append({'ticker': ticker, 'title': latest_news['title'], 'link': latest_news['link']})
-                        scanned_tickers_for_news.add(ticker) # Đánh dấu là đã quét
-
-                # THÊM ĐỘ TRỄ Ở ĐÂY
-                time.sleep(2) # Đợi 2 giây sau mỗi yêu cầu. Bạn có thể điều chỉnh giá trị này.
-
-            progress_bar.empty()
-            st.session_state['market_news_overview'] = market_news
-
-    if 'market_news_overview' in st.session_state:
-        for news in st.session_state['market_news_overview']:
-            st.markdown(f"- **{news['ticker']}**: [{news['title']}]({news['link']})")
 
 elif page == "🔬 Backtesting":
     st.subheader("Backtesting Đa Chiến lược")
@@ -594,88 +437,67 @@ elif page == "🔬 Backtesting":
     
     if st.button("Chạy Backtest"):
         with st.spinner(f"Đang chạy backtest với chiến lược {strategy_name}..."):
-            selected_strategy = strategies[strategy_name]
-            stats = run_backtest(data_ind.copy(), selected_strategy)
-            if stats is not None:
-                st.text("Kết quả Backtest:")
-                formatted_stats = format_backtest_stats(stats)
-                st.write(formatted_stats)
-                st.markdown(analyze_backtest_results(stats))
+            # Lấy lại data_ind để chắc chắn nó khớp với mã đang chọn
+            backtest_data = add_technical_indicators(get_stock_data(selected_ticker))
+            if not backtest_data.empty:
+                stats = run_backtest(backtest_data, strategies[strategy_name])
+                if stats is not None:
+                    st.text("Kết quả Backtest:")
+                    formatted_stats = format_backtest_stats(stats)
+                    st.write(formatted_stats)
+                    st.markdown(analyze_backtest_results(stats))
+                else:
+                    st.error("Không thể chạy backtest. Mã này có thể có quá ít dữ liệu lịch sử.")
             else:
-                st.error("Không thể chạy backtest. Mã này có thể có quá ít dữ liệu lịch sử.")
+                st.error(f"Không có đủ dữ liệu cho {selected_ticker} để chạy backtest.")
 
 elif page == "🚨 Cảnh báo":
     st.subheader("Cảnh báo Tín hiệu Giao dịch Ngắn hạn")
     
-    # --- BẮT ĐẦU PHẦN GIẢI THÍCH CẢNH BÁO ---
     with st.expander("👉 Giải thích các loại cảnh báo (Nhấn để mở rộng)"):
         st.markdown("""
         Các cảnh báo sau đây dựa trên phân tích kỹ thuật của các chỉ báo phổ biến. Đây không phải lời khuyên đầu tư.
-
-        **1. Cảnh báo Xu hướng (Trend Signals)**
-        * **Xu hướng TĂNG**: Giá và MA ngắn hạn trên MA dài hạn, ADX mạnh (>25). Xu hướng tăng bền vững.
-        * **Xu hướng GIẢM**: Giá và MA ngắn hạn dưới MA dài hạn, ADX mạnh (>25). Xu hướng giảm bền vững.
-        * **Đi ngang (Sideways)**: ADX yếu (<20). Thị trường thiếu xu hướng rõ ràng, giá dao động trong biên độ hẹp.
-
-        **2. Cảnh báo MUA/BÁN (Entry/Exit Signals)**
-        * **MUA (Giao cắt vàng)**: MA20 cắt lên MA50. Tín hiệu tăng giá tiềm năng.
-        * **MUA (MACD cắt lên Signal)**: Đường MACD cắt lên Signal. Động lực tăng giá đang hình thành.
-        * **MUA (Hồi phục)**: RSI quá bán (<30) và giá bắt đầu tăng trở lại. Có thể phục hồi kỹ thuật.
-        * **BÁN (Giao cắt tử thần)**: MA20 cắt xuống MA50. Tín hiệu giảm giá tiềm năng.
-        * **BÁN (MACD cắt xuống Signal)**: Đường MACD cắt xuống Signal. Động lực giảm giá đang hình thành.
-        * **BÁN (Điều chỉnh)**: RSI quá mua (>70) và giá bắt đầu giảm. Có thể điều chỉnh/giảm giá.
-
-        **3. Cảnh báo Duy trì Vị thế (Holding Signals)**
-        * **GIỮ MUA**: Giá duy trì trên cả MA20 và MA50. Tiếp tục giữ vị thế mua.
-        * **GIỮ BÁN**: Giá duy trì dưới cả MA20 và MA50. Tiếp tục giữ vị thế bán (hoặc đứng ngoài).
-
-        **4. Cảnh báo Đột phá/Thủng đáy (Breakout/Breakdown Signals)**
-        * **MUA Mạnh (Breakout)**: Giá vượt lên Dải Bollinger trên. Động lực tăng giá cực mạnh.
-        * **BÁN Mạnh (Breakdown)**: Giá xuyên thủng Dải Bollinger dưới. Động lực giảm giá cực mạnh.
+        - **Xu hướng TĂNG/GIẢM**: Dựa vào vị trí của giá so với các đường MA và chỉ số sức mạnh xu hướng ADX.
+        - **MUA/BÁN**: Dựa vào các điểm giao cắt của đường MA, MACD, hoặc các ngưỡng quá mua/quá bán của RSI.
+        - **GIỮ MUA/BÁN**: Dựa trên việc giá duy trì ổn định trên hoặc dưới các đường MA quan trọng.
+        - **MUA/BÁN Mạnh**: Dựa trên tín hiệu phá vỡ các Dải Bollinger.
         """)
-    # --- KẾT THÚC PHẦN GIẢI THÍCH CẢNH BÁO ---
 
     st.markdown("#### Quét các rổ chỉ số chính")
     st.write("Chọn rổ chỉ số bạn muốn quét để tìm kiếm các tín hiệu giao dịch.")
 
-    col_vn30, col_vn100 = st.columns(2) # Tạo 2 cột cho 2 nút
+    col_vn30, col_vn100 = st.columns(2) 
 
-# CODE ĐÃ SỬA
-with col_vn30:
-    # Thêm thụt lề ở đây
-    if st.button("Quét VN30"):
-        st.info("Đang quét các mã trong rổ VN30...")
-        try:
-            with open('default_tickers.txt', 'r') as f:
-                vn_tickers = [line.strip() for line in f] 
-            scan_alerts_for_tickers(vn_tickers)
-        except FileNotFoundError:
-            st.error("Không tìm thấy file default_tickers.txt")
+    with col_vn30:
+        if st.button("Quét VN30"):
+            st.info("Đang quét các mã trong rổ VN30...")
+            try:
+                vn_tickers = get_default_scan_list()
+                scan_alerts_for_tickers(vn_tickers)
+            except FileNotFoundError:
+                st.error("Không tìm thấy file default_tickers.txt")
 
-with col_vn100:
-    # Thêm thụt lề ở đây
-    if st.button("Quét VN100"):
-        st.warning("Quét VN100 có thể mất nhiều thời gian hơn.")
-        st.info("Đang quét các mã trong rổ VN100...")
-        try:
-            with open('default_tickers.txt', 'r') as f:
-                vn100_tickers = [line.strip() for line in f]
-            scan_alerts_for_tickers(vn100_tickers)
-        except FileNotFoundError:
-            st.error("Không tìm thấy file default_tickers.txt")
+    with col_vn100:
+        if st.button("Quét VN100"):
+            st.warning("Quét VN100 có thể mất nhiều thời gian hơn.")
+            st.info("Đang quét các mã trong rổ VN100...")
+            try:
+                vn100_tickers = get_default_scan_list()
+                scan_alerts_for_tickers(vn100_tickers)
+            except FileNotFoundError:
+                st.error("Không tìm thấy file default_tickers.txt")
 
     st.divider()
 
     st.markdown("#### Quét các mã tự chọn")
-    # Sử dụng st.multiselect để có dropdown gợi ý và mã mặc định
     custom_alert_tickers = st.multiselect(
         "Chọn (hoặc gõ để tìm) các mã bạn muốn theo dõi:",
-        ticker_list, # ticker_list đã được load ở sidebar
-        default=['FPT', 'HPG', 'VCB'] # Các mã mặc định
+        ticker_list,
+        default=['FPT', 'HPG', 'VCB']
     )
 
     if st.button("Quét các mã đã chọn"):
-        if custom_alert_tickers: # Kiểm tra xem người dùng có chọn mã nào không
+        if custom_alert_tickers:
             st.info(f"Đang quét các mã tự chọn: {', '.join(custom_alert_tickers)}...")
             scan_alerts_for_tickers(custom_alert_tickers)
         else:
