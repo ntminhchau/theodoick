@@ -18,6 +18,7 @@ import re
 from urllib.parse import quote_plus
 import time
 from supabase import create_client
+import gnews
 
 # --- CẤU HÌNH ---
 warnings.filterwarnings('ignore')
@@ -112,28 +113,37 @@ def add_technical_indicators(df):
     return df
 
 @st.cache_data(ttl=3600)
-def search_google_news(ticker):
-    """Tìm kiếm tin tức trên Google, giới hạn ở Vietstock và CafeF."""
+def search_news_with_gnews(ticker):
+    """
+    Tìm kiếm tin tức bằng GNews API - Ổn định và đáng tin cậy hơn.
+    """
     try:
-        query = f'"{ticker}" site:vietstock.vn OR site:cafef.vn'
-        encoded_query = quote_plus(query)
-        url = f"https://www.google.com/search?q={encoded_query}&tbm=nws"
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36'}
-        response = requests.get(url, headers=headers, timeout=10)
-        response.raise_for_status()
-        soup = BeautifulSoup(response.text, 'lxml')
+        if "GNEWS_API_KEY" not in st.secrets:
+            st.error("Lỗi: Không tìm thấy GNEWS_API_KEY trong file secrets.toml.")
+            return []
+
+        # Lấy API key từ secrets
+        api_key = st.secrets["GNEWS_API_KEY"]
+        gnews_client = gnews.GNews(api_key=api_key)
+        
+        # Tạo câu truy vấn, ưu tiên các trang tin tức tài chính Việt Nam
+        query = f'"{ticker}" (site:vietstock.vn OR site:cafef.vn OR site:fireant.vn OR site-baodautu.vn)'
+        
+        # Tìm kiếm tin tức bằng tiếng Việt, giới hạn 7 bài
+        articles_raw = gnews_client.get_news(query, language='vi', country='VN', max_results=7)
+        
+        # Định dạng lại kết quả cho phù hợp
         articles = []
-        for g in soup.find_all('div', class_='SoaBEf'):
-            a_tag = g.find('a')
-            title_tag = g.find('div', role='heading')
-            if a_tag and title_tag:
-                link, title = a_tag.get('href'), title_tag.text.strip()
-                if link and title:
-                    articles.append({'title': title, 'link': link})
-                    if len(articles) >= 7: break
+        for item in articles_raw:
+            articles.append({
+                'title': item['title'],
+                'link': item['url']
+            })
         return articles
     except Exception as e:
-        print(f"Lỗi khi tìm kiếm tin tức trên Google cho {ticker}: {e}")
+        # Xử lý các lỗi có thể xảy ra khi gọi API
+        print(f"Lỗi khi tìm kiếm tin tức trên GNews cho {ticker}: {e}")
+        st.warning("Không thể lấy tin tức từ GNews. Có thể đã hết lượt truy cập miễn phí trong ngày.")
         return []
 
 def scan_alerts_for_tickers(tickers):
@@ -449,7 +459,7 @@ elif page == "🤖 Báo cáo Dự báo AI":
 
 elif page == "📰 Tin tức Liên quan":
     st.subheader(f"Tin tức Liên quan đến {selected_ticker}")
-    articles = search_google_news(selected_ticker)
+    articles = search_news_with_gnews(selected_ticker)
     if articles:
         for article in articles:
             st.markdown(f"- [{article['title']}]({article['link']})")
