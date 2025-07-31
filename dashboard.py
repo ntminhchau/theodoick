@@ -17,14 +17,12 @@ from sklearn.preprocessing import StandardScaler
 import re
 from urllib.parse import quote_plus
 import time
-import sqlite3
 from supabase import create_client
 
 # --- CẤU HÌNH ---
 warnings.filterwarnings('ignore')
 pd.options.mode.chained_assignment = None
 st.set_page_config(layout="wide", page_title="Dashboard Phân tích AI")
-PREDICTIONS_DB_FILE = "ai_predictions.db"
 
 # --- KẾT NỐI SUPABASE VÀ CÁC HÀM LẤY DỮ LIỆU ---
 
@@ -292,15 +290,17 @@ def analyze_backtest_results(stats):
     return explanation + "\n" + conclusion
 
 @st.cache_data(ttl=3600)
+# HÀM MỚI
+@st.cache_data(ttl=3600) # Cache 1 giờ
 def get_all_predictions_from_db():
-    """Đọc toàn bộ báo cáo dự báo từ file SQLite."""
+    """Đọc toàn bộ báo cáo dự báo từ bảng 'ai_predictions' trên Supabase."""
     try:
-        with sqlite3.connect(f"file:{PREDICTIONS_DB_FILE}?mode=ro", uri=True) as conn:
-            df = pd.read_sql_query("SELECT * FROM predictions", conn)
+        # Dùng lại supabase_client đã được khởi tạo ở đầu app
+        response = supabase_client.table('ai_predictions').select("*").execute()
+        df = pd.DataFrame(response.data)
         return df
     except Exception as e:
-        st.error(f"Lỗi khi đọc file báo cáo '{PREDICTIONS_DB_FILE}': {e}")
-        st.warning("Vui lòng đảm bảo bạn đã tải file `ai_predictions.db` lên GitHub.")
+        st.error(f"Lỗi khi đọc dữ liệu dự báo từ Supabase: {e}")
         return pd.DataFrame()
 
 def get_single_prediction(df_preds, ticker):
