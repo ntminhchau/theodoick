@@ -102,6 +102,7 @@ def get_last_price_info(ticker):
 def add_technical_indicators(df):
     """Thêm các chỉ báo kỹ thuật."""
     if df.empty: return df
+    # Các chỉ báo đã có
     df.ta.sma(length=20, append=True)
     df.ta.sma(length=50, append=True)
     df.ta.sma(length=200, append=True)
@@ -110,6 +111,8 @@ def add_technical_indicators(df):
     df.ta.adx(length=14, append=True)
     df.ta.bbands(length=20, append=True)
     df['Highest_High_20'] = df['High'].rolling(20).max()
+    df.ta.sar(append=True)
+    
     return df
 
 @st.cache_data(ttl=3600)
@@ -416,16 +419,79 @@ st.divider()
 
 # --- HIỂN THỊ NỘI DUNG TƯƠNG ỨNG VỚI LỰA CHỌN TRÊN SIDEBAR ---
 
+# ✨ THAY THẾ TOÀN BỘ KHỐI CODE NÀY
 if page == "📊 Phân tích Kỹ thuật":
-    st.subheader("Biểu đồ giá")
-    if not data_ind.empty:
-        fig = go.Figure(data=[go.Candlestick(x=data_ind.index, open=data_ind['Open'], high=data_ind['High'], low=data_ind['Low'], close=data_ind['Close'], name='Giá')])
-        fig.add_trace(go.Scatter(x=data_ind.index, y=data_ind.get('SMA_20'), mode='lines', name='MA20'))
-        fig.add_trace(go.Scatter(x=data_ind.index, y=data_ind.get('SMA_50'), mode='lines', name='MA50'))
-        fig.update_layout(xaxis_rangeslider_visible=False)
+    st.subheader("Biểu đồ Phân tích Kỹ thuật Toàn diện")
+
+    if not data_ind.empty and len(data_ind) > 50:
+        from plotly.subplots import make_subplots
+
+        # Tạo biểu đồ với 3 subplot: Giá, MACD, và RSI
+        fig = make_subplots(
+            rows=3, 
+            cols=1, 
+            shared_xaxes=True, 
+            vertical_spacing=0.05,
+            subplot_titles=(f'Biểu đồ giá {selected_ticker}', 'MACD', 'RSI'),
+            row_heights=[0.6, 0.2, 0.2] # Ưu tiên chiều cao cho biểu đồ giá
+        )
+
+        # --- Subplot 1: Biểu đồ giá và các chỉ báo overlay ---
+        
+        # Biểu đồ nến
+        fig.add_trace(go.Candlestick(
+            x=data_ind.index, 
+            open=data_ind['Open'], 
+            high=data_ind['High'], 
+            low=data_ind['Low'], 
+            close=data_ind['Close'], 
+            name='Giá'
+        ), row=1, col=1)
+
+        # Đường MA
+        fig.add_trace(go.Scatter(x=data_ind.index, y=data_ind.get('SMA_20'), mode='lines', name='MA20', line=dict(color='orange', width=1)), row=1, col=1)
+        fig.add_trace(go.Scatter(x=data_ind.index, y=data_ind.get('SMA_50'), mode='lines', name='MA50', line=dict(color='blue', width=1)), row=1, col=1)
+        
+        # Bollinger Bands (BOLL)
+        fig.add_trace(go.Scatter(x=data_ind.index, y=data_ind.get('BBU_20_2.0'), mode='lines', name='Bollinger Upper', line=dict(color='gray', width=1, dash='dash')))
+        fig.add_trace(go.Scatter(x=data_ind.index, y=data_ind.get('BBL_20_2.0'), mode='lines', name='Bollinger Lower', line=dict(color='gray', width=1, dash='dash'), fill='tonexty', fillcolor='rgba(128,128,128,0.1)'))
+
+        # Parabolic SAR (SAR)
+        fig.add_trace(go.Scatter(x=data_ind.index, y=data_ind.get('SAR_0.02_0.2'), mode='markers', name='SAR', marker=dict(color='purple', size=3)), row=1, col=1)
+
+        # --- Subplot 2: MACD ---
+
+        # Đường MACD và Signal
+        fig.add_trace(go.Scatter(x=data_ind.index, y=data_ind.get('MACD_12_26_9'), mode='lines', name='MACD', line=dict(color='green', width=1.5)), row=2, col=1)
+        fig.add_trace(go.Scatter(x=data_ind.index, y=data_ind.get('MACDs_12_26_9'), mode='lines', name='Signal', line=dict(color='red', width=1, dash='dash')), row=2, col=1)
+        
+        # Histogram MACD
+        colors = ['red' if val < 0 else 'green' for val in data_ind.get('MACDh_12_26_9')]
+        fig.add_trace(go.Bar(x=data_ind.index, y=data_ind.get('MACDh_12_26_9'), name='Histogram', marker_color=colors), row=2, col=1)
+
+        # --- Subplot 3: RSI ---
+        
+        fig.add_trace(go.Scatter(x=data_ind.index, y=data_ind.get('RSI_14'), mode='lines', name='RSI', line=dict(color='cyan', width=1.5)), row=3, col=1)
+        # Thêm đường quá mua (70) và quá bán (30)
+        fig.add_hline(y=70, line_width=1, line_dash="dash", line_color="red", row=3, col=1)
+        fig.add_hline(y=30, line_width=1, line_dash="dash", line_color="green", row=3, col=1)
+
+        # Cập nhật layout chung
+        fig.update_layout(
+            height=800, 
+            showlegend=True,
+            xaxis3_rangeslider_visible=False, # Ẩn thanh trượt ở biểu đồ dưới cùng
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1) # Đưa chú thích lên trên
+        )
+        
+        # Cập nhật các trục Y
+        fig.update_yaxes(title_text="Giá", row=1, col=1)
+        fig.update_yaxes(title_text="MACD", row=2, col=1)
+        fig.update_yaxes(title_text="RSI", row=3, col=1)
+
         st.plotly_chart(fig, use_container_width=True)
     else:
-        st.warning("Không có dữ liệu để hiển thị.")
+        st.warning("Không có đủ dữ liệu để hiển thị biểu đồ.")
 
 elif page == "🤖 Báo cáo Dự báo AI":
     st.subheader("Báo cáo Dự báo Xu hướng từ AI")
