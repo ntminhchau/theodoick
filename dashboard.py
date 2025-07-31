@@ -40,24 +40,24 @@ def init_connection():
 supabase_client = init_connection()
 
 @st.cache_data(ttl=86400)
-def load_ticker_list():
+def load_ticker_list(filename='all_tickers.txt'):
     """Tải danh sách mã cổ phiếu từ file text."""
     try:
-        with open('all_tickers.txt', 'r', encoding='utf-8') as f:
-            return [line.strip() for line in f]
+        with open(filename, 'r', encoding='utf-8') as f:
+            return [line.strip().upper() for line in f if line.strip()]
     except FileNotFoundError:
-        st.error("Lỗi: Không tìm thấy file 'all_tickers.txt'.")
+        st.error(f"Lỗi: Không tìm thấy file '{filename}'.")
         return ['FPT', 'VNM', 'HPG', 'VCB', 'MWG']
 
-@st.cache_data(ttl=14400)
-def get_default_scan_list():
-    """Lấy danh sách cổ phiếu mặc định từ file text."""
-    try:
-        with open('default_tickers.txt', 'r', encoding='utf-8') as f:
-            return [line.strip() for line in f]
-    except FileNotFoundError:
-        st.warning("Lỗi: Không tìm thấy file 'default_tickers.txt'.")
-        return ['FPT','VNM','HPG', 'VCB', 'MWG']
+# Tách riêng các hàm tải danh sách để rõ ràng hơn
+def load_vn30_list():
+    return load_ticker_list('vn30_tickers.txt')
+
+def load_vn100_list():
+    return load_ticker_list('vn100_tickers.txt')
+
+def load_all_tickers():
+    return load_ticker_list('all_tickers.txt')
 
 @st.cache_data(ttl=900)
 def get_stock_data(ticker, days_back=730):
@@ -237,7 +237,10 @@ def scan_alerts_for_tickers(tickers):
     else:
         st.info("Không có tín hiệu giao dịch nổi bật cho các mã đã chọn.")
 
-# --- BACKTESTING ---
+
+# --- START: MODIFIED BACKTESTING SECTION ---
+
+# Định nghĩa các lớp chiến lược (giữ nguyên)
 class SmaCross(Strategy):
     def init(self): self.sma1, self.sma2 = self.data.SMA_20, self.data.SMA_50
     def next(self):
@@ -263,23 +266,44 @@ class BollingerBands(Strategy):
     def next(self):
         if crossover(self.data.Close, self.lower_band): self.buy()
         elif crossover(self.upper_band, self.data.Close): self.position.close()
+
+# Dictionary chứa các chiến lược
+STRATEGIES = {
+    "Giao cắt MA (SmaCross)": SmaCross,
+    "Dao động RSI (RsiOscillator)": RsiOscillator,
+    "Giao cắt MACD (MacdCross)": MacdCross,
+    "Phá vỡ nền giá (Breakout)": Breakout,
+    "Dải Bollinger (BollingerBands)": BollingerBands
+}
+
 @st.cache_data
 def run_backtest(_df, strategy):
+    """Chạy backtest cho một chiến lược, trả về kết quả thống kê."""
     if _df.empty or len(_df) < 50: return None
     try:
+        # Đảm bảo các cột cần thiết tồn tại trước khi chạy
+        required_cols = ['Open', 'High', 'Low', 'Close', 'Volume']
+        if not all(col in _df.columns for col in required_cols):
+             st.warning(f"Thiếu các cột dữ liệu OHLCV cần thiết.")
+             return None
         bt = Backtest(_df, strategy, cash=100_000_000, commission=.0015)
         return bt.run()
     except Exception as e:
-        print(f"--- LỖI BACKTEST CHI TIẾT ---: {e}")
+        # In lỗi ra console để debug, không hiển thị cho người dùng
+        print(f"--- LỖI BACKTEST ---: {e}")
         return None
+
 def format_backtest_stats(stats):
+    """Định dạng kết quả thống kê để hiển thị."""
     if stats is None: return None
     stats_copy = stats.copy()
     for idx, value in stats_copy.items():
         if isinstance(value, pd.Timedelta):
             stats_copy[idx] = str(value)
     return stats_copy
+
 def analyze_backtest_results(stats):
+    """Phân tích và đưa ra kết luận từ kết quả thống kê."""
     if stats is None: return ""
     explanation = "#### Diễn giải các chỉ số chính:\n- **Return [%]**: Tổng tỷ suất lợi nhuận.\n- **Win Rate [%]**: Tỷ lệ giao dịch có lãi.\n- **Max. Drawdown [%]**: Mức sụt giảm tài khoản lớn nhất (đo lường rủi ro)."
     conclusion = "#### Kết luận:\n"
@@ -289,8 +313,18 @@ def analyze_backtest_results(stats):
     else: conclusion += "❌ **Không hiệu quả:** Chiến lược không tạo ra lợi nhuận với mã này."
     return explanation + "\n" + conclusion
 
-@st.cache_data(ttl=3600)
-# HÀM MỚI
+def is_strategy_effective(stats):
+    """Hàm helper để kiểm tra nhanh một chiến lược có hiệu quả không."""
+    if stats is None: return False
+    ret = stats.get('Return [%]', 0)
+    win_rate = stats.get('Win Rate [%]', 0)
+    drawdown = stats.get('Max. Drawdown [%]', 0)
+    # Tiêu chí: Lợi nhuận > 10%, Tỷ lệ thắng > 50%, Sụt giảm < 20%
+    return ret > 10 and win_rate > 50 and drawdown > -20
+
+# --- END: MODIFIED BACKTESTING SECTION ---
+
+
 @st.cache_data(ttl=3600) # Cache 1 giờ
 def get_all_predictions_from_db():
     """Đọc toàn bộ báo cáo dự báo từ bảng 'ai_predictions' trên Supabase."""
@@ -319,19 +353,19 @@ st.title("📈 Dashboard Phân tích Cổ phiếu Tích hợp AI")
 # --- THANH BÊN (SIDEBAR) ---
 with st.sidebar:
     st.header("Bảng điều khiển")
-    ticker_list = load_ticker_list()
-    if ticker_list:
-        # Tìm index của 'FPT' một cách an toàn
+    all_tickers = load_all_tickers()
+    if all_tickers:
         try:
-            fpt_index = ticker_list.index('FPT')
+            fpt_index = all_tickers.index('FPT')
         except ValueError:
             fpt_index = 0
-        selected_ticker = st.selectbox("Chọn mã cổ phiếu:", ticker_list, index=fpt_index)
+        selected_ticker = st.selectbox("Chọn mã cổ phiếu:", all_tickers, index=fpt_index)
     else:
         selected_ticker = st.text_input("Nhập mã cổ phiếu:", 'FPT')
     
     st.divider()
-    page_options = ["📊 Phân tích Kỹ thuật", "🤖 Báo cáo Dự báo AI", "📰 Tin tức Liên quan", "🔬 Backtesting", "🚨 Cảnh báo"]
+    # Thêm trang "Backtest Hàng loạt" vào danh sách
+    page_options = ["📊 Phân tích Kỹ thuật", "🤖 Báo cáo Dự báo AI", "📰 Tin tức Liên quan", "🔬 Backtest một mã", "🔍 Backtest Hàng loạt", "🚨 Cảnh báo"]
     page = st.radio("Chọn chức năng:", page_options)
     st.divider()
     st.info("Dashboard được Chou xây dựng để phân tích chứng khoán.")
@@ -422,35 +456,122 @@ elif page == "📰 Tin tức Liên quan":
     else:
         st.info("Không tìm thấy tin tức cho mã này.")
 
-elif page == "🔬 Backtesting":
-    st.subheader("Backtesting Đa Chiến lược")
+# --- START: NEW BACKTESTING PAGE LOGIC ---
+elif page == "🔬 Backtest một mã":
+    st.subheader("Backtest Chiến lược cho một Cổ phiếu")
     st.write(f"Kiểm thử các chiến lược giao dịch cho mã: **{selected_ticker}**")
 
-    strategies = {
-        "Giao cắt MA (SmaCross)": SmaCross,
-        "Dao động RSI (RsiOscillator)": RsiOscillator,
-        "Giao cắt MACD (MacdCross)": MacdCross,
-        "Phá vỡ nền giá (Breakout)": Breakout,
-        "Dải Bollinger (BollingerBands)": BollingerBands
-    }
-    strategy_name = st.selectbox("Chọn chiến lược để kiểm thử:", list(strategies.keys()))
-    
-    if st.button("Chạy Backtest"):
-        with st.spinner(f"Đang chạy backtest với chiến lược {strategy_name}..."):
-            # Lấy lại data_ind để chắc chắn nó khớp với mã đang chọn
-            backtest_data = add_technical_indicators(get_stock_data(selected_ticker))
-            if not backtest_data.empty:
-                stats = run_backtest(backtest_data, strategies[strategy_name])
-                if stats is not None:
-                    st.text("Kết quả Backtest:")
-                    formatted_stats = format_backtest_stats(stats)
-                    st.write(formatted_stats)
-                    st.markdown(analyze_backtest_results(stats))
-                else:
-                    st.error("Không thể chạy backtest. Mã này có thể có quá ít dữ liệu lịch sử.")
-            else:
-                st.error(f"Không có đủ dữ liệu cho {selected_ticker} để chạy backtest.")
+    backtest_mode = st.radio(
+        "Chọn chế độ Backtest:",
+        ("Kiểm thử chi tiết một chiến lược", "Kiểm tra nhanh tất cả chiến lược"),
+        horizontal=True
+    )
 
+    st.divider()
+
+    # --- Chế độ 1: Kiểm thử chi tiết ---
+    if backtest_mode == "Kiểm thử chi tiết một chiến lược":
+        st.markdown("#### 1. Kiểm thử chi tiết")
+        strategy_name = st.selectbox("Chọn chiến lược để kiểm thử:", list(STRATEGIES.keys()))
+        
+        if st.button("Chạy Backtest Chi tiết"):
+            with st.spinner(f"Đang chạy backtest chi tiết với chiến lược {strategy_name}..."):
+                backtest_data = add_technical_indicators(get_stock_data(selected_ticker))
+                if not backtest_data.empty:
+                    stats = run_backtest(backtest_data, STRATEGIES[strategy_name])
+                    if stats is not None:
+                        st.text("Kết quả Backtest:")
+                        formatted_stats = format_backtest_stats(stats)
+                        st.write(formatted_stats)
+                        st.markdown(analyze_backtest_results(stats))
+                    else:
+                        st.error("Không thể chạy backtest. Mã này có thể có quá ít dữ liệu lịch sử hoặc dữ liệu không hợp lệ.")
+                else:
+                    st.error(f"Không có đủ dữ liệu cho {selected_ticker} để chạy backtest.")
+    
+    # --- Chế độ 2: Kiểm tra nhanh ---
+    elif backtest_mode == "Kiểm tra nhanh tất cả chiến lược":
+        st.markdown("#### 2. Kiểm tra nhanh")
+        st.info("Chức năng này sẽ chạy tất cả các chiến lược và báo cáo những chiến lược nào có hiệu quả (lợi nhuận > 10%, tỷ lệ thắng > 50%, sụt giảm < 20%).")
+        if st.button("Chạy Kiểm tra nhanh"):
+            with st.spinner(f"Đang kiểm tra nhanh tất cả các chiến lược cho {selected_ticker}..."):
+                backtest_data = add_technical_indicators(get_stock_data(selected_ticker))
+                if backtest_data.empty or len(backtest_data) < 50:
+                    st.error(f"Không có đủ dữ liệu cho {selected_ticker} để chạy backtest.")
+                else:
+                    effective_strategies = []
+                    for name, strategy_class in STRATEGIES.items():
+                        stats = run_backtest(backtest_data, strategy_class)
+                        if is_strategy_effective(stats):
+                            effective_strategies.append(name)
+                    
+                    st.markdown("---")
+                    if effective_strategies:
+                        st.success(f"🎉 Tìm thấy các chiến lược hiệu quả cho **{selected_ticker}**:")
+                        for name in effective_strategies:
+                            st.markdown(f"- **{name}**")
+                    else:
+                        st.warning(f"Không tìm thấy chiến lược nào thực sự hiệu quả cho **{selected_ticker}** theo tiêu chí đã đặt ra.")
+
+# --- START: NEW BATCH BACKTESTING PAGE ---
+elif page == "🔍 Backtest Hàng loạt":
+    st.subheader("Backtest Hàng loạt theo Chiến lược")
+    st.info("Chọn một chiến lược và một rổ cổ phiếu để tìm ra những mã phù hợp nhất với chiến lược đó.")
+
+    # 1. Chọn chiến lược
+    strategy_name = st.selectbox("Chọn chiến lược để áp dụng hàng loạt:", list(STRATEGIES.keys()))
+    selected_strategy_class = STRATEGIES[strategy_name]
+
+    # 2. Chọn rổ cổ phiếu
+    ticker_list_option = st.selectbox(
+        "Chọn rổ cổ phiếu để quét:",
+        ("VN30", "VN100", "Tất cả mã trên sàn (chậm)")
+    )
+
+    if ticker_list_option == "VN30":
+        tickers_to_scan = load_vn30_list()
+        if not tickers_to_scan: st.error("Không tải được danh sách VN30. Vui lòng kiểm tra file `vn30_tickers.txt`.")
+    elif ticker_list_option == "VN100":
+        tickers_to_scan = load_vn100_list()
+        if not tickers_to_scan: st.error("Không tải được danh sách VN100. Vui lòng kiểm tra file `vn100_tickers.txt`.")
+    else: # Tất cả mã
+        tickers_to_scan = load_all_tickers()
+        st.warning("⚠️ **Lưu ý:** Quét tất cả các mã sẽ mất rất nhiều thời gian.")
+
+    # 3. Chạy backtest
+    if st.button(f"Tìm mã hiệu quả cho chiến lược '{strategy_name}'"):
+        if not tickers_to_scan:
+            st.warning("Vui lòng chọn một rổ cổ phiếu hợp lệ.")
+        else:
+            with st.spinner(f"Đang quét {len(tickers_to_scan)} mã với chiến lược {strategy_name}..."):
+                effective_tickers = []
+                progress_bar = st.progress(0, text="Bắt đầu quét...")
+
+                for i, ticker in enumerate(tickers_to_scan):
+                    progress_bar.progress((i + 1) / len(tickers_to_scan), text=f"Đang xử lý: {ticker}")
+                    
+                    # Lấy dữ liệu và chạy backtest
+                    df = add_technical_indicators(get_stock_data(ticker))
+                    stats = run_backtest(df, selected_strategy_class)
+
+                    # Kiểm tra hiệu quả
+                    if is_strategy_effective(stats):
+                        effective_tickers.append(ticker)
+                
+                progress_bar.empty()
+                st.markdown("---")
+                if effective_tickers:
+                    st.success(f"✅ Đã tìm thấy **{len(effective_tickers)}** mã có hiệu quả cao với chiến lược '{strategy_name}':")
+                    # Hiển thị kết quả dạng cột cho dễ nhìn
+                    num_columns = 4
+                    cols = st.columns(num_columns)
+                    for i, ticker in enumerate(effective_tickers):
+                        with cols[i % num_columns]:
+                            st.markdown(f"- **{ticker}**")
+                else:
+                    st.info(f"Không tìm thấy mã nào thực sự hiệu quả với chiến lược '{strategy_name}' trong rổ đã chọn.")
+
+# --- END: NEW BATCH BACKTESTING PAGE ---
 elif page == "🚨 Cảnh báo":
     st.subheader("Cảnh báo Tín hiệu Giao dịch Ngắn hạn")
     
@@ -470,29 +591,30 @@ elif page == "🚨 Cảnh báo":
 
     with col_vn30:
         if st.button("Quét VN30"):
-            st.info("Đang quét các mã trong rổ VN30...")
-            try:
-                vn_tickers = get_default_scan_list()
-                scan_alerts_for_tickers(vn_tickers)
-            except FileNotFoundError:
-                st.error("Không tìm thấy file default_tickers.txt")
+            vn30_tickers = load_vn30_list()
+            if vn30_tickers:
+                st.info("Đang quét các mã trong rổ VN30...")
+                scan_alerts_for_tickers(vn30_tickers)
+            else:
+                st.error("Không tìm thấy/tải được file vn30_tickers.txt")
+
 
     with col_vn100:
         if st.button("Quét VN100"):
-            st.warning("Quét VN100 có thể mất nhiều thời gian hơn.")
-            st.info("Đang quét các mã trong rổ VN100...")
-            try:
-                vn100_tickers = get_default_scan_list()
+            vn100_tickers = load_vn100_list()
+            if vn100_tickers:
+                st.info("Đang quét các mã trong rổ VN100...")
                 scan_alerts_for_tickers(vn100_tickers)
-            except FileNotFoundError:
-                st.error("Không tìm thấy file default_tickers.txt")
+            else:
+                st.error("Không tìm thấy/tải được file vn100_tickers.txt")
+
 
     st.divider()
 
     st.markdown("#### Quét các mã tự chọn")
     custom_alert_tickers = st.multiselect(
         "Chọn (hoặc gõ để tìm) các mã bạn muốn theo dõi:",
-        ticker_list,
+        all_tickers,
         default=['FPT', 'HPG', 'VCB']
     )
 
