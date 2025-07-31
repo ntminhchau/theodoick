@@ -111,7 +111,9 @@ def add_technical_indicators(df):
     df.ta.adx(length=14, append=True)
     df.ta.bbands(length=20, append=True)
     df['Highest_High_20'] = df['High'].rolling(20).max()
-    df.ta.sar(append=True)
+    psar = ta.psar(high=df["High"], low=df["Low"], close=df["Close"])
+    df["SAR"] = psar["PSARl_0.02_0.2"]
+
     
     return df
 
