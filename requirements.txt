@@ -1,13 +1,12 @@
 streamlit==1.47.1
-pandas
+pandas==2.2.2
 pandas-ta>=0.3.14
-requests
+requests==2.32.3
 beautifulsoup4==4.13.4
 transformers==4.54.0
 plotly==6.2.0
 backtesting==0.6.4
-supabase
-gnews
+supabase-py==2.5.0
+gnews==0.2.4
 numpy==1.26.4
 scikit-learn==1.7.1
-setuptools
