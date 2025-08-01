@@ -19,6 +19,7 @@ from urllib.parse import quote_plus
 import time
 from supabase import create_client
 import gnews
+from vnstock import stock_quote
 
 # --- CẤU HÌNH ---
 warnings.filterwarnings('ignore')
@@ -27,6 +28,31 @@ st.set_page_config(layout="wide", page_title="Dashboard Phân tích AI")
 
 # --- KẾT NỐI SUPABASE VÀ CÁC HÀM LẤY DỮ LIỆU ---
 
+@st.cache_data(ttl=60) # Cache trong 60 giây
+def get_realtime_quote(ticker):
+    """
+    Lấy dữ liệu giá gần như real-time cho một mã cổ phiếu từ vnstock.
+    """
+    try:
+        data = stock_quote(ticker)
+        if data is not None and not data.empty:
+            # Lấy dòng dữ liệu đầu tiên (và duy nhất)
+            quote = data.iloc[0].to_dict()
+            # Trả về dictionary với key được chuẩn hóa để tương thích với code cũ
+            return {
+                'price': quote.get('price'),
+                'change': quote.get('change'),
+                'pct_change': quote.get('pctChange'),
+                'open': quote.get('open'),
+                'high': quote.get('high'),
+                'low': quote.get('low'),
+                'volume': quote.get('totalVolume')
+            }
+        return None
+    except Exception as e:
+        print(f"Lỗi khi lấy dữ liệu realtime cho {ticker}: {e}")
+        return None
+        
 @st.cache_resource
 def init_connection():
     """Khởi tạo kết nối tới Supabase, cache lại để không tạo lại liên tục."""
@@ -392,17 +418,23 @@ df_all_predictions = get_all_predictions_from_db()
 
 # --- HEADER THÔNG TIN CHUNG ---
 st.header(f"Tổng quan: {selected_ticker}")
-price_info = get_last_price_info(selected_ticker)
+price_info = get_realtime_quote(selected_ticker) # ✨ THAY THẾ Ở ĐÂY
 if price_info:
     col1, col2, col3, col4 = st.columns([2, 2, 3, 3])
-    price_str = f"{price_info['price']:,.1f}"
-    change_str = f"{price_info['change']:,.1f} ({price_info['pct_change']:.2f}%)"
-    col1.metric("Giá", price_str, change_str)
-    col2.metric("Mở cửa", f"{price_info['open']:,.1f}")
-    col3.metric("Cao/Thấp", f"{price_info['high']:,.1f} / {price_info['low']:,.1f}")
-    col4.metric("KLGD", f"{price_info['volume']:,.0f}")
+    # Dùng 'N/A' nếu dữ liệu không có sẵn
+    price_val = price_info.get('price', 0)
+    change_val = price_info.get('change', 0)
+    pct_change_val = price_info.get('pct_change', 0)
+
+    price_str = f"{price_val:,.1f}" if price_val is not None else "N/A"
+    change_str = f"{change_val:,.1f} ({pct_change_val:.2f}%)" if all(v is not None for v in [change_val, pct_change_val]) else ""
+    
+    col1.metric("Giá (Real-time)", price_str, change_str)
+    col2.metric("Mở cửa", f"{price_info.get('open', 0):,.1f}")
+    col3.metric("Cao/Thấp", f"{price_info.get('high', 0):,.1f} / {price_info.get('low', 0):,.1f}")
+    col4.metric("KLGD", f"{price_info.get('volume', 0):,.0f}")
 else:
-    st.warning(f"Không thể lấy thông tin giá gần nhất cho {selected_ticker}.")
+    st.warning(f"Không thể lấy thông tin giá real-time cho {selected_ticker}.")
 
 # Hiển thị dự báo AI ngay tại header
 prediction_info = get_single_prediction(df_all_predictions, selected_ticker)
