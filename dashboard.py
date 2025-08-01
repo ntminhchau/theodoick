@@ -34,43 +34,37 @@ def get_realtime_quote(ticker):
     """
     Lấy dữ liệu giá gần như real-time cho một mã cổ phiếu từ vnstock.
     """
-    max_retries = 3
-    for attempt in range(max_retries):
-        try:
-            quote = Quote(symbol=ticker)
-            df = quote.intraday(resolution=resolution)
-
-            if df.empty:
-                return pd.DataFrame()
-
-            df.rename(columns={
-                'time': 'Date',
-                'open': 'Open',
-                'high': 'High',
-                'low': 'Low',
-                'close': 'Close',
-                'volume': 'Volume'
-            }, inplace=True)
-
-            df['Date'] = pd.to_datetime(df['Date'])
-            df.set_index('Date', inplace=True)
-
-            for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
-                df[col] = pd.to_numeric(df[col], errors='coerce')
-
-            df.dropna(subset=['Open', 'Close'], inplace=True)
-            return df
-
-        except (ConnectionError, TimeoutError) as e:
-            st.warning(f"Lỗi kết nối khi tải realtime {ticker} (Thử lại {attempt + 1}/{max_retries}): {e}")
-            if attempt < max_retries - 1:
-                time.sleep(2 ** attempt)
-            else:
-                st.error(f"Thử lại thất bại: Lỗi realtime {ticker}: {e}")
-                return pd.DataFrame()
-        except Exception as e:
-            st.error(f"Lỗi khi lấy dữ liệu realtime {ticker}: {e}")
+    try:
+        quote = Quote(symbol=ticker)
+        df = quote.history(
+            start=(datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d'),
+            end=datetime.now().strftime('%Y-%m-%d'),
+            resolution='1'  # Dữ liệu intraday (1 phút)
+        )
+        if df.empty:
             return pd.DataFrame()
+        
+        # Lấy dòng mới nhất (giá cập nhật gần nhất)
+        latest = df.sort_values(by="time", ascending=False).iloc[0:1].copy()
+        latest.rename(columns={
+            'time': 'Date',
+            'open': 'Open',
+            'high': 'High',
+            'low': 'Low',
+            'close': 'Price',
+            'volume': 'Volume'
+        }, inplace=True)
+        latest['Change'] = latest['Price'] - latest['Open']
+        latest['Pct_Change'] = latest['Change'] / latest['Open'] * 100
+
+        latest['Date'] = pd.to_datetime(latest['Date'])
+        latest.set_index('Date', inplace=True)
+
+        return latest[["Price", "Change", "Pct_Change", "Open", "High", "Low", "Volume"]]
+
+    except Exception as e:
+        st.error(f"Lỗi khi lấy dữ liệu real-time cho {ticker}: {e}")
+        return pd.DataFrame()
         
 @st.cache_resource
 def init_connection():
