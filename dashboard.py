@@ -434,42 +434,24 @@ st.header(f"Tổng quan: {selected_ticker}")
 price_info = get_realtime_quote(selected_ticker) # ✨ THAY THẾ Ở ĐÂY
 if isinstance(price_info, pd.DataFrame) and not price_info.empty:
     col1, col2, col3, col4 = st.columns([2, 2, 3, 3])
-    # Dùng 'N/A' nếu dữ liệu không có sẵn
-    price_val = price_info.at[0, 'Price'] if 'Price' in price_info.columns else None
-    change_val = price_info.at[0, 'Change'] if 'Change' in price_info.columns else None
-    pct_change_val = price_info.at[0, 'Pct_Change'] if 'Pct_Change' in price_info.columns else None
-    open_val = price_info.at[0, 'Open'] if 'Open' in price_info.columns else None
-    high_val = price_info.at[0, 'High'] if 'High' in price_info.columns else None
-    low_val = price_info.at[0, 'Low'] if 'Low' in price_info.columns else None
-    volume_val = price_info.at[0, 'Volume'] if 'Volume' in price_info.columns else None
 
-    # Format hiển thị
+    price_val = price_info.at[0, 'Price']
+    change_val = price_info.at[0, 'Change']
+    pct_change_val = price_info.at[0, 'Pct_Change']
+    open_val = price_info.at[0, 'Open']
+    high_val = price_info.at[0, 'High']
+    low_val = price_info.at[0, 'Low']
+    volume_val = price_info.at[0, 'Volume']
+
     price_str = f"{price_val:,.1f}" if price_val is not None else "N/A"
-    change_str = (
-        f"{change_val:,.1f} ({pct_change_val:.2f}%)"
-        if None not in (change_val, pct_change_val) else ""
-    )
+    change_str = f"{change_val:,.1f} ({pct_change_val:.2f}%)" if None not in (change_val, pct_change_val) else ""
 
-    # Hiển thị lên UI
     col1.metric("Giá (Real-time)", price_str, change_str)
     col2.metric("Mở cửa", f"{open_val:,.1f}" if open_val is not None else "N/A")
     col3.metric("Cao/Thấp", f"{high_val:,.1f} / {low_val:,.1f}" if None not in (high_val, low_val) else "N/A")
     col4.metric("KLGD", f"{volume_val:,.0f}" if volume_val is not None else "N/A")
 else:
     st.warning(f"Không thể lấy thông tin giá real-time cho {selected_ticker}.")
-
-# Hiển thị dự báo AI ngay tại header
-prediction_info = get_single_prediction(df_all_predictions, selected_ticker)
-if prediction_info is not None:
-    pred_text = prediction_info['DuBao']
-    if "TĂNG" in pred_text:
-        prob = prediction_info['XacSuatTang']
-        st.success(f"**Dự báo AI (5 ngày tới):** 📈 {pred_text} (Xác suất: {prob}) - {prediction_info['LyGiai']}")
-    else:
-        prob = prediction_info['XacSuatGiam']
-        st.error(f"**Dự báo AI (5 ngày tới):** 📉 {pred_text} (Xác suất: {prob}) - {prediction_info['LyGiai']}")
-else:
-    st.info(f"Chưa có dữ liệu dự báo AI cho {selected_ticker} trong báo cáo.")
 
 st.divider()
 
