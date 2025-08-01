@@ -28,27 +28,66 @@ st.set_page_config(layout="wide", page_title="Dashboard Phân tích AI")
 
 # --- KẾT NỐI SUPABASE VÀ CÁC HÀM LẤY DỮ LIỆU ---
 
+@st.cache_data(ttl=900) # Cache 15 phút
+def get_stock_realtime(ticker, days_back=730):
+    """Lấy dữ liệu lịch sử cho một mã cổ phiếu hoặc chỉ số."""
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            quote = Quote(symbol=ticker)
+            df = quote.history(
+                start=(datetime.now() - timedelta(days=days_back)).strftime('%Y-%m-%d'),
+                end=datetime.now().strftime('%Y-%m-%d'),
+                resolution='1D'
+            )
+            if df.empty: return pd.DataFrame() # Vẫn trả về DataFrame rỗng nếu không có dữ liệu
+            
+            df.rename(columns={'time': 'Date', 'open': 'Open', 'high': 'High', 'low': 'Low', 'close': 'Close', 'volume': 'Volume'}, inplace=True)
+            df['Date'] = pd.to_datetime(df['Date'])
+            df.set_index('Date', inplace=True)
+            
+            for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+            
+            df.dropna(subset=['Open', 'Close'], inplace=True)
+            return df
+        except (ConnectionError, Timeout) as e:
+            st.warning(f"Lỗi kết nối khi tải dữ liệu cho {ticker} (Thử lại {attempt + 1}/{max_retries}): {e}")
+            if attempt < max_retries - 1:
+                time.sleep(2 ** attempt) # Độ trễ lũy thừa
+            else:
+                st.error(f"Thử lại thất bại: Lỗi khi tải dữ liệu cho {ticker}: {e}")
+                return pd.DataFrame() # Trả về DataFrame rỗng nếu thất bại
+        except Exception as e:
+            st.error(f"Lỗi khi tải dữ liệu cho {ticker}: {e}")
+            return pd.DataFrame()
+
 @st.cache_data(ttl=60) # Cache trong 60 giây
 def get_realtime_quote(ticker):
     """
     Lấy dữ liệu giá gần như real-time cho một mã cổ phiếu từ vnstock.
     """
     try:
-        quote = Quote(symbol=ticker, source="VCI")  # Bạn có thể thử "TCBS" nếu thích
-        data = quote.intraday(page_size=1)  # Lấy 1 dòng mới nhất
+        df = get_stock_realtime(ticker, days_back=3)  # Lấy dữ liệu 3 ngày gần nhất
+        if df.empty or len(df) < 2:
+            return None
 
-        if data is not None and not data.empty:
-            latest = data.iloc[-1].to_dict()
-            return {
-                'price': latest.get('close'),
-                'change': latest.get('change'),       # Tùy theo source, có thể cần tính
-                'pct_change': latest.get('percent'),  # Hoặc tính từ giá
-                'open': latest.get('open'),
-                'high': latest.get('high'),
-                'low': latest.get('low'),
-                'volume': latest.get('volume')
-            }
-        return None
+        last_day = df.iloc[-1]
+        prev_day = df.iloc[-2]
+
+        price = last_day['Close']
+        change = price - prev_day['Close']
+        pct_change = (change / prev_day['Close']) * 100 if prev_day['Close'] > 0 else 0
+
+        return {
+            'price': price,
+            'change': change,
+            'pct_change': pct_change,
+            'open': last_day['Open'],
+            'high': last_day['High'],
+            'low': last_day['Low'],
+            'volume': last_day['Volume']
+        }
 
     except Exception as e:
         print(f"Lỗi khi lấy dữ liệu realtime cho {ticker}: {e}")
