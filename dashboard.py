@@ -432,20 +432,29 @@ df_all_predictions = get_all_predictions_from_db()
 # --- HEADER THÔNG TIN CHUNG ---
 st.header(f"Tổng quan: {selected_ticker}")
 price_info = get_realtime_quote(selected_ticker) # ✨ THAY THẾ Ở ĐÂY
-if price_info:
+if isinstance(price_info, pd.DataFrame) and not price_info.empty:
     col1, col2, col3, col4 = st.columns([2, 2, 3, 3])
     # Dùng 'N/A' nếu dữ liệu không có sẵn
-    price_val = price_info.get('price', 0)
-    change_val = price_info.get('change', 0)
-    pct_change_val = price_info.get('pct_change', 0)
+    price_val = price_info.at[0, 'Price'] if 'Price' in price_info.columns else None
+    change_val = price_info.at[0, 'Change'] if 'Change' in price_info.columns else None
+    pct_change_val = price_info.at[0, 'Pct_Change'] if 'Pct_Change' in price_info.columns else None
+    open_val = price_info.at[0, 'Open'] if 'Open' in price_info.columns else None
+    high_val = price_info.at[0, 'High'] if 'High' in price_info.columns else None
+    low_val = price_info.at[0, 'Low'] if 'Low' in price_info.columns else None
+    volume_val = price_info.at[0, 'Volume'] if 'Volume' in price_info.columns else None
 
+    # Format hiển thị
     price_str = f"{price_val:,.1f}" if price_val is not None else "N/A"
-    change_str = f"{change_val:,.1f} ({pct_change_val:.2f}%)" if all(v is not None for v in [change_val, pct_change_val]) else ""
-    
+    change_str = (
+        f"{change_val:,.1f} ({pct_change_val:.2f}%)"
+        if None not in (change_val, pct_change_val) else ""
+    )
+
+    # Hiển thị lên UI
     col1.metric("Giá (Real-time)", price_str, change_str)
-    col2.metric("Mở cửa", f"{price_info.get('open', 0):,.1f}")
-    col3.metric("Cao/Thấp", f"{price_info.get('high', 0):,.1f} / {price_info.get('low', 0):,.1f}")
-    col4.metric("KLGD", f"{price_info.get('volume', 0):,.0f}")
+    col2.metric("Mở cửa", f"{open_val:,.1f}" if open_val is not None else "N/A")
+    col3.metric("Cao/Thấp", f"{high_val:,.1f} / {low_val:,.1f}" if None not in (high_val, low_val) else "N/A")
+    col4.metric("KLGD", f"{volume_val:,.0f}" if volume_val is not None else "N/A")
 else:
     st.warning(f"Không thể lấy thông tin giá real-time cho {selected_ticker}.")
 
