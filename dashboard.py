@@ -356,10 +356,16 @@ def get_single_prediction(df_preds, ticker: str):
     # Debug
     st.write("✅ Danh sách mã có trong dự báo AI:", df_preds['MaCoPhieu'].unique().tolist())
     st.write("🔍 Mã ticker bạn đang kiểm tra:", ticker)
+    st.write("📊 Dữ liệu trước khi lọc:", df_preds.head())
 
     ticker = ticker.strip().upper()
-    df_preds['MaCoPhieu'] = df_preds['MaCoPhieu'].str.strip().str.upper()
+    df_preds['MaCoPhieu'] = df_preds['MaCoPhieu'].astype(str).str.strip().str.upper()
 
+    if ticker in df_preds['MaCoPhieu'].values:
+        st.success(f"✅ Tìm thấy mã {ticker} trong dữ liệu.")
+    else:
+        st.error(f"❌ Không tìm thấy mã {ticker} trong df_preds.")
+        
     prediction_row = df_preds[df_preds['MaCoPhieu'] == ticker]
 
     if not prediction_row.empty:
