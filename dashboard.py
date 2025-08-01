@@ -19,7 +19,7 @@ from urllib.parse import quote_plus
 import time
 from supabase import create_client
 import gnews
-from vnstock import stock_quote
+from vnstock import Listing, Quote
 
 # --- CẤU HÌNH ---
 warnings.filterwarnings('ignore')
@@ -34,21 +34,22 @@ def get_realtime_quote(ticker):
     Lấy dữ liệu giá gần như real-time cho một mã cổ phiếu từ vnstock.
     """
     try:
-        data = stock_quote(ticker)
+        quote = Quote(symbol=ticker, source="VCI")  # Bạn có thể thử "TCBS" nếu thích
+        data = quote.intraday(page_size=1)  # Lấy 1 dòng mới nhất
+
         if data is not None and not data.empty:
-            # Lấy dòng dữ liệu đầu tiên (và duy nhất)
-            quote = data.iloc[0].to_dict()
-            # Trả về dictionary với key được chuẩn hóa để tương thích với code cũ
+            latest = data.iloc[-1].to_dict()
             return {
-                'price': quote.get('price'),
-                'change': quote.get('change'),
-                'pct_change': quote.get('pctChange'),
-                'open': quote.get('open'),
-                'high': quote.get('high'),
-                'low': quote.get('low'),
-                'volume': quote.get('totalVolume')
+                'price': latest.get('close'),
+                'change': latest.get('change'),       # Tùy theo source, có thể cần tính
+                'pct_change': latest.get('percent'),  # Hoặc tính từ giá
+                'open': latest.get('open'),
+                'high': latest.get('high'),
+                'low': latest.get('low'),
+                'volume': latest.get('volume')
             }
         return None
+
     except Exception as e:
         print(f"Lỗi khi lấy dữ liệu realtime cho {ticker}: {e}")
         return None
