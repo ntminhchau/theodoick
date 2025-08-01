@@ -431,27 +431,29 @@ df_all_predictions = get_all_predictions_from_db()
 
 # --- HEADER THÔNG TIN CHUNG ---
 st.header(f"Tổng quan: {selected_ticker}")
-price_info = get_realtime_quote(selected_ticker) # ✨ THAY THẾ Ở ĐÂY
-if isinstance(price_info, pd.DataFrame) and not price_info.empty:
+try:
+    price_info = get_realtime_quote(selected_ticker)
+except Exception as e:
+    price_info = None
+    st.error(f"❌ Lỗi khi lấy dữ liệu real-time cho {selected_ticker}: {e}")
+
+# Kiểm tra dữ liệu có hợp lệ không
+if price_info is not None and not price_info.empty:
     col1, col2, col3, col4 = st.columns([2, 2, 3, 3])
 
-    price_val = price_info.at[0, 'Price']
-    change_val = price_info.at[0, 'Change']
-    pct_change_val = price_info.at[0, 'Pct_Change']
-    open_val = price_info.at[0, 'Open']
-    high_val = price_info.at[0, 'High']
-    low_val = price_info.at[0, 'Low']
-    volume_val = price_info.at[0, 'Volume']
+    price_val = price_info.get('price', None)
+    change_val = price_info.get('change', None)
+    pct_change_val = price_info.get('pct_change', None)
 
     price_str = f"{price_val:,.1f}" if price_val is not None else "N/A"
-    change_str = f"{change_val:,.1f} ({pct_change_val:.2f}%)" if None not in (change_val, pct_change_val) else ""
+    change_str = f"{change_val:,.1f} ({pct_change_val:.2f}%)" if None not in [change_val, pct_change_val] else ""
 
     col1.metric("Giá (Real-time)", price_str, change_str)
-    col2.metric("Mở cửa", f"{open_val:,.1f}" if open_val is not None else "N/A")
-    col3.metric("Cao/Thấp", f"{high_val:,.1f} / {low_val:,.1f}" if None not in (high_val, low_val) else "N/A")
-    col4.metric("KLGD", f"{volume_val:,.0f}" if volume_val is not None else "N/A")
+    col2.metric("Mở cửa", f"{price_info.get('open', 0):,.1f}")
+    col3.metric("Cao/Thấp", f"{price_info.get('high', 0):,.1f} / {price_info.get('low', 0):,.1f}")
+    col4.metric("KLGD", f"{price_info.get('volume', 0):,.0f}")
 else:
-    st.warning(f"Không thể lấy thông tin giá real-time cho {selected_ticker}.")
+    st.warning(f"⚠️ Không thể lấy thông tin giá real-time cho {selected_ticker}.")
 
 st.divider()
 
