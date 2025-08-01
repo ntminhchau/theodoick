@@ -344,9 +344,23 @@ def is_strategy_effective(stats):
 def get_all_predictions_from_db():
     """Đọc toàn bộ báo cáo dự báo từ bảng 'ai_predictions' trên Supabase."""
     try:
-        # Dùng lại supabase_client đã được khởi tạo ở đầu app
-        response = supabase_client.table('ai_predictions').select("*").execute()
-        df = pd.DataFrame(response.data)
+        # Giải pháp 1: Lấy tất cả bản ghi bằng cách phân trang
+        all_data = []
+        page = 0
+        page_size = 1000
+        while True:
+            response = supabase_client.table("ai_predictions") \
+                .select("*") \
+                .range(page * page_size, (page + 1) * page_size - 1) \
+                .execute()
+            
+            data_chunk = response.data
+            if not data_chunk:
+                break
+            all_data.extend(data_chunk)
+            page += 1
+
+        df = pd.DataFrame(all_data)
         return df
     except Exception as e:
         st.error(f"Lỗi khi đọc dữ liệu dự báo từ Supabase: {e}")
