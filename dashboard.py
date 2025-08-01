@@ -353,7 +353,7 @@ def get_all_predictions_from_db():
         return pd.DataFrame()
 
 def get_single_prediction(df_preds, ticker: str):
-    # Debug: In danh sách mã có trong dự báo
+    # Debug
     st.write("✅ Danh sách mã có trong dự báo AI:", df_preds['MaCoPhieu'].unique().tolist())
     st.write("🔍 Mã ticker bạn đang kiểm tra:", ticker)
 
@@ -364,11 +364,14 @@ def get_single_prediction(df_preds, ticker: str):
 
     if not prediction_row.empty:
         prediction = prediction_row.iloc[0]["DuBao"]
-        probability = prediction_row.iloc[0]["XacSuatTang"]
+        prob_up = prediction_row.iloc[0]["XacSuatTang"]
         explanation = prediction_row.iloc[0]["LyGiai"]
+        prob_down = 1 - prob_up  # ✅ Suy ra nếu không có 'XacSuatGiam'
+
         return {
             'DuBao': prediction,
-            'XacSuatTang': probability,
+            'XacSuatTang': prob_up,
+            'XacSuatGiam': prob_down,
             'LyGiai': explanation
         }
     else:
