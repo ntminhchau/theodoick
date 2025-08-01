@@ -371,11 +371,6 @@ def get_single_prediction(df_preds, ticker: str):
     ticker = ticker.strip().upper()
     df_preds['MaCoPhieu'] = df_preds['MaCoPhieu'].astype(str).str.strip().str.upper()
 
-    if ticker in df_preds['MaCoPhieu'].values:
-        st.success(f"✅ Tìm thấy mã {ticker} trong dữ liệu.")
-    else:
-        st.error(f"❌ Không tìm thấy mã {ticker} trong df_preds.")
-        
     prediction_row = df_preds[df_preds['MaCoPhieu'] == ticker]
 
     if not prediction_row.empty:
