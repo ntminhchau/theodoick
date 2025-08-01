@@ -357,6 +357,8 @@ def get_single_prediction(df_preds, ticker: str):
     st.write("✅ Danh sách mã có trong dự báo AI:", df_preds['MaCoPhieu'].unique().tolist())
     st.write("🔍 Mã ticker bạn đang kiểm tra:", ticker)
     st.write("📊 Dữ liệu trước khi lọc:", df_preds.head())
+    st.write("📊 Số dòng df_preds:", len(df_preds))
+    st.write("📋 Các mã có trong df_preds:", df_preds['MaCoPhieu'].unique())
 
     ticker = ticker.strip().upper()
     df_preds['MaCoPhieu'] = df_preds['MaCoPhieu'].astype(str).str.strip().str.upper()
