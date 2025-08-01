@@ -19,7 +19,6 @@ from urllib.parse import quote_plus
 import time
 from supabase import create_client
 import gnews
-from vnstock import Listing, Quote
 
 # --- CẤU HÌNH ---
 warnings.filterwarnings('ignore')
@@ -28,44 +27,6 @@ st.set_page_config(layout="wide", page_title="Dashboard Phân tích AI")
 
 # --- KẾT NỐI SUPABASE VÀ CÁC HÀM LẤY DỮ LIỆU ---
 
-
-@st.cache_data(ttl=60) # Cache trong 60 giây
-def get_realtime_quote(ticker):
-    """
-    Lấy dữ liệu giá gần như real-time cho một mã cổ phiếu từ vnstock.
-    """
-    try:
-        quote = Quote(symbol=ticker)
-        df = quote.history(
-            start=(datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d'),
-            end=datetime.now().strftime('%Y-%m-%d'),
-            resolution='1'  # Dữ liệu intraday (1 phút)
-        )
-        if df.empty:
-            return pd.DataFrame()
-        
-        # Lấy dòng mới nhất (giá cập nhật gần nhất)
-        latest = df.sort_values(by="time", ascending=False).iloc[0:1].copy()
-        latest.rename(columns={
-            'time': 'Date',
-            'open': 'Open',
-            'high': 'High',
-            'low': 'Low',
-            'close': 'Price',
-            'volume': 'Volume'
-        }, inplace=True)
-        latest['Change'] = latest['Price'] - latest['Open']
-        latest['Pct_Change'] = latest['Change'] / latest['Open'] * 100
-
-        latest['Date'] = pd.to_datetime(latest['Date'])
-        latest.set_index('Date', inplace=True)
-
-        return latest[["Price", "Change", "Pct_Change", "Open", "High", "Low", "Volume"]]
-
-    except Exception as e:
-        st.error(f"Lỗi khi lấy dữ liệu real-time cho {ticker}: {e}")
-        return pd.DataFrame()
-        
 @st.cache_resource
 def init_connection():
     """Khởi tạo kết nối tới Supabase, cache lại để không tạo lại liên tục."""
@@ -431,29 +392,30 @@ df_all_predictions = get_all_predictions_from_db()
 
 # --- HEADER THÔNG TIN CHUNG ---
 st.header(f"Tổng quan: {selected_ticker}")
-try:
-    price_info = get_realtime_quote(selected_ticker)
-except Exception as e:
-    price_info = None
-    st.error(f"❌ Lỗi khi lấy dữ liệu real-time cho {selected_ticker}: {e}")
-
-# Kiểm tra dữ liệu có hợp lệ không
-if price_info is not None and not price_info.empty:
+price_info = get_last_price_info(selected_ticker)
+if price_info:
     col1, col2, col3, col4 = st.columns([2, 2, 3, 3])
-
-    price_val = price_info.get('price', None)
-    change_val = price_info.get('change', None)
-    pct_change_val = price_info.get('pct_change', None)
-
-    price_str = f"{price_val:,.1f}" if price_val is not None else "N/A"
-    change_str = f"{change_val:,.1f} ({pct_change_val:.2f}%)" if None not in [change_val, pct_change_val] else ""
-
-    col1.metric("Giá (Real-time)", price_str, change_str)
-    col2.metric("Mở cửa", f"{price_info.get('open', 0):,.1f}")
-    col3.metric("Cao/Thấp", f"{price_info.get('high', 0):,.1f} / {price_info.get('low', 0):,.1f}")
-    col4.metric("KLGD", f"{price_info.get('volume', 0):,.0f}")
+    price_str = f"{price_info['price']:,.1f}"
+    change_str = f"{price_info['change']:,.1f} ({price_info['pct_change']:.2f}%)"
+    col1.metric("Giá", price_str, change_str)
+    col2.metric("Mở cửa", f"{price_info['open']:,.1f}")
+    col3.metric("Cao/Thấp", f"{price_info['high']:,.1f} / {price_info['low']:,.1f}")
+    col4.metric("KLGD", f"{price_info['volume']:,.0f}")
 else:
-    st.warning(f"⚠️ Không thể lấy thông tin giá real-time cho {selected_ticker}.")
+    st.warning(f"Không thể lấy thông tin giá gần nhất cho {selected_ticker}.")
+
+# Hiển thị dự báo AI ngay tại header
+prediction_info = get_single_prediction(df_all_predictions, selected_ticker)
+if prediction_info is not None:
+    pred_text = prediction_info['DuBao']
+    if "TĂNG" in pred_text:
+        prob = prediction_info['XacSuatTang']
+        st.success(f"**Dự báo AI (5 ngày tới):** 📈 {pred_text} (Xác suất: {prob}) - {prediction_info['LyGiai']}")
+    else:
+        prob = prediction_info['XacSuatGiam']
+        st.error(f"**Dự báo AI (5 ngày tới):** 📉 {pred_text} (Xác suất: {prob}) - {prediction_info['LyGiai']}")
+else:
+    st.info(f"Chưa có dữ liệu dự báo AI cho {selected_ticker} trong báo cáo.")
 
 st.divider()
 
