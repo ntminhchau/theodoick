@@ -352,20 +352,28 @@ def get_all_predictions_from_db():
         st.error(f"Lỗi khi đọc dữ liệu dự báo từ Supabase: {e}")
         return pd.DataFrame()
 
-def get_single_prediction(df_preds, ticker):
-    """
-    Lấy dự báo cho một mã cụ thể từ DataFrame đã tải.
-    """
-    if df_preds.empty or 'MaCoPhieu' not in df_preds.columns:
-        return None
-    
-    # Chuyển cả ticker và cột 'MaCoPhieu' về chữ hoa để so sánh chính xác
-    ticker_upper = ticker.strip().upper()
-    prediction_row = df_preds[df_preds['MaCoPhieu'].str.strip().str.upper() == ticker_upper]
-    
+def get_single_prediction(df_preds, ticker: str):
+    # Debug: In danh sách mã có trong dự báo
+    st.write("✅ Danh sách mã có trong dự báo AI:", df_preds['MaCoPhieu'].unique().tolist())
+    st.write("🔍 Mã ticker bạn đang kiểm tra:", ticker)
+
+    ticker = ticker.strip().upper()
+    df_preds['MaCoPhieu'] = df_preds['MaCoPhieu'].str.strip().str.upper()
+
+    prediction_row = df_preds[df_preds['MaCoPhieu'] == ticker]
+
     if not prediction_row.empty:
-        return prediction_row.iloc[0]
-    return None
+        prediction = prediction_row.iloc[0]["DuBao"]
+        probability = prediction_row.iloc[0]["XacSuatTang"]
+        explanation = prediction_row.iloc[0]["LyGiai"]
+        return {
+            'DuBao': prediction,
+            'XacSuatTang': probability,
+            'LyGiai': explanation
+        }
+    else:
+        st.warning(f"⚠️ Không tìm thấy dự báo cho mã: {ticker}")
+        return None
 
 # --- GIAO DIỆN STREAMLIT ---
 st.title("📈 Dashboard Phân tích Cổ phiếu Tích hợp AI")
