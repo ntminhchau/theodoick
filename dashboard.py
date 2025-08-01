@@ -28,70 +28,49 @@ st.set_page_config(layout="wide", page_title="Dashboard Phân tích AI")
 
 # --- KẾT NỐI SUPABASE VÀ CÁC HÀM LẤY DỮ LIỆU ---
 
-@st.cache_data(ttl=900) # Cache 15 phút
-def get_stock_realtime(ticker, days_back=730):
-    """Lấy dữ liệu lịch sử cho một mã cổ phiếu hoặc chỉ số."""
-    max_retries = 3
-    for attempt in range(max_retries):
-        try:
-            quote = Quote(symbol=ticker)
-            df = quote.history(
-                start=(datetime.now() - timedelta(days=days_back)).strftime('%Y-%m-%d'),
-                end=datetime.now().strftime('%Y-%m-%d'),
-                resolution='1D'
-            )
-            if df.empty: return pd.DataFrame() # Vẫn trả về DataFrame rỗng nếu không có dữ liệu
-            
-            df.rename(columns={'time': 'Date', 'open': 'Open', 'high': 'High', 'low': 'Low', 'close': 'Close', 'volume': 'Volume'}, inplace=True)
-            df['Date'] = pd.to_datetime(df['Date'])
-            df.set_index('Date', inplace=True)
-            
-            for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
-                df[col] = pd.to_numeric(df[col], errors='coerce')
-            
-            df.dropna(subset=['Open', 'Close'], inplace=True)
-            return df
-        except (ConnectionError, Timeout) as e:
-            st.warning(f"Lỗi kết nối khi tải dữ liệu cho {ticker} (Thử lại {attempt + 1}/{max_retries}): {e}")
-            if attempt < max_retries - 1:
-                time.sleep(2 ** attempt) # Độ trễ lũy thừa
-            else:
-                st.error(f"Thử lại thất bại: Lỗi khi tải dữ liệu cho {ticker}: {e}")
-                return pd.DataFrame() # Trả về DataFrame rỗng nếu thất bại
-        except Exception as e:
-            st.error(f"Lỗi khi tải dữ liệu cho {ticker}: {e}")
-            return pd.DataFrame()
 
 @st.cache_data(ttl=60) # Cache trong 60 giây
 def get_realtime_quote(ticker):
     """
     Lấy dữ liệu giá gần như real-time cho một mã cổ phiếu từ vnstock.
     """
-    try:
-        df = get_stock_realtime(ticker, days_back=3)  # Lấy dữ liệu 3 ngày gần nhất
-        if df.empty or len(df) < 2:
-            return None
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            quote = Quote(symbol=ticker)
+            df = quote.intraday(resolution=resolution)
 
-        last_day = df.iloc[-1]
-        prev_day = df.iloc[-2]
+            if df.empty:
+                return pd.DataFrame()
 
-        price = last_day['Close']
-        change = price - prev_day['Close']
-        pct_change = (change / prev_day['Close']) * 100 if prev_day['Close'] > 0 else 0
+            df.rename(columns={
+                'time': 'Date',
+                'open': 'Open',
+                'high': 'High',
+                'low': 'Low',
+                'close': 'Close',
+                'volume': 'Volume'
+            }, inplace=True)
 
-        return {
-            'price': price,
-            'change': change,
-            'pct_change': pct_change,
-            'open': last_day['Open'],
-            'high': last_day['High'],
-            'low': last_day['Low'],
-            'volume': last_day['Volume']
-        }
+            df['Date'] = pd.to_datetime(df['Date'])
+            df.set_index('Date', inplace=True)
 
-    except Exception as e:
-        print(f"Lỗi khi lấy dữ liệu realtime cho {ticker}: {e}")
-        return None
+            for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+
+            df.dropna(subset=['Open', 'Close'], inplace=True)
+            return df
+
+        except (ConnectionError, TimeoutError) as e:
+            st.warning(f"Lỗi kết nối khi tải realtime {ticker} (Thử lại {attempt + 1}/{max_retries}): {e}")
+            if attempt < max_retries - 1:
+                time.sleep(2 ** attempt)
+            else:
+                st.error(f"Thử lại thất bại: Lỗi realtime {ticker}: {e}")
+                return pd.DataFrame()
+        except Exception as e:
+            st.error(f"Lỗi khi lấy dữ liệu realtime {ticker}: {e}")
+            return pd.DataFrame()
         
 @st.cache_resource
 def init_connection():
