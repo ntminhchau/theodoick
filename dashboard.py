@@ -119,8 +119,7 @@ def add_technical_indicators(df):
 @st.cache_data(ttl=3600)
 def search_news_with_gnews(ticker):
     """
-    Tìm kiếm tin tức tiếng Việt liên quan đến chứng khoán/tài chính bằng GNews.
-    Không giới hạn domain.
+    Tìm kiếm tin tức tiếng Việt liên quan đến cổ phiếu bằng GNews API.
     """
     try:
         if "GNEWS_API_KEY" not in st.secrets:
@@ -129,9 +128,9 @@ def search_news_with_gnews(ticker):
 
         api_key = st.secrets["GNEWS_API_KEY"]
 
-        # Truy vấn thông minh: ticker + lĩnh vực tài chính
-        query = f'"{ticker}" AND (chứng khoán OR cổ phiếu OR tài chính OR thị trường)'
-        url = f"https://gnews.io/api/v4/search?q={requests.utils.quote(query)}&lang=vi&country=vn&max=20&token={api_key}"
+        # Tối ưu truy vấn cho GNews API v4
+        query = f'"{ticker} cổ phiếu"'
+        url = f"https://gnews.io/api/v4/search?q={requests.utils.quote(query)}&lang=vi&country=vn&max=10&token={api_key}"
 
         response = requests.get(url)
         if response.status_code != 200:
@@ -143,8 +142,15 @@ def search_news_with_gnews(ticker):
             st.info(f"Không tìm thấy tin tức tiếng Việt liên quan đến {ticker}.")
             return []
 
-        # Lấy tất cả bài tiếng Việt
-        articles = [{"title": a["title"], "link": a["url"]} for a in data["articles"]]
+        # Trả kết quả bài viết
+        articles = []
+        for a in data["articles"]:
+            articles.append({
+                "title": a["title"],
+                "link": a["url"],
+                "source": a.get("source", {}).get("name", ""),
+                "published": a.get("publishedAt", "")
+            })
         return articles
 
     except Exception as e:
@@ -730,6 +736,7 @@ elif page == "🚨 Cảnh báo":
             scan_alerts_for_tickers(custom_alert_tickers)
         else:
             st.warning("Vui lòng chọn ít nhất một mã cổ phiếu để quét.")
+
 
 
 
