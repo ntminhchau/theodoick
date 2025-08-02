@@ -140,18 +140,17 @@ def search_news_with_gnews(ticker):
             st.info(f"Không tìm thấy tin tức liên quan đến {ticker}.")
             return []
 
-        # Lọc chỉ lấy bài từ vietstock.vn hoặc cafef.vn
-        whitelist_domains = ["vietstock.vn", "cafef.vn"]
+        # Chỉ lấy bài từ baodautu.vn
         articles = []
         for article in data["articles"]:
-            if any(domain in article["url"] for domain in whitelist_domains):
+            if "baodautu.vn" in article["url"]:
                 articles.append({
                     "title": article["title"],
                     "link": article["url"]
                 })
 
         if not articles:
-            st.info("Không tìm thấy bài viết từ vietstock.vn hoặc cafef.vn.")
+            st.info(f"Không tìm thấy bài viết từ baodautu.vn cho {ticker}.")
         return articles
 
     except Exception as e:
@@ -737,5 +736,6 @@ elif page == "🚨 Cảnh báo":
             scan_alerts_for_tickers(custom_alert_tickers)
         else:
             st.warning("Vui lòng chọn ít nhất một mã cổ phiếu để quét.")
+
 
 
