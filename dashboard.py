@@ -117,46 +117,31 @@ def add_technical_indicators(df):
     return df
 
 @st.cache_data(ttl=3600)
-def search_news_with_gnews(ticker):
-    """
-    Tìm kiếm tin tức tiếng Việt liên quan đến cổ phiếu bằng GNews API.
-    """
-    try:
-        if "GNEWS_API_KEY" not in st.secrets:
-            st.error("Lỗi: Không tìm thấy GNEWS_API_KEY trong file secrets.toml.")
-            return []
+def search_stock_news_with_google(ticker, api_key, cx_id, num=5):
+    query = f"{ticker} cổ phiếu"
+    url = "https://www.googleapis.com/customsearch/v1"
+    params = {
+        "q": query,
+        "key": api_key,
+        "cx": cx_id,
+        "num": num,
+        "lr": "lang_vi",  # ưu tiên tiếng Việt
+    }
 
-        api_key = st.secrets["GNEWS_API_KEY"]
-
-        # Tối ưu truy vấn cho GNews API v4
-        query = f'"{ticker} cổ phiếu"'
-        url = f"https://gnews.io/api/v4/search?q={requests.utils.quote(query)}&lang=vi&country=vn&max=10&token={api_key}"
-
-        response = requests.get(url)
-        if response.status_code != 200:
-            st.warning(f"Lỗi GNews API: {response.status_code}")
-            return []
-
-        data = response.json()
-        if "articles" not in data or len(data["articles"]) == 0:
-            st.info(f"Không tìm thấy tin tức tiếng Việt liên quan đến {ticker}.")
-            return []
-
-        # Trả kết quả bài viết
-        articles = []
-        for a in data["articles"]:
-            articles.append({
-                "title": a["title"],
-                "link": a["url"],
-                "source": a.get("source", {}).get("name", ""),
-                "published": a.get("publishedAt", "")
-            })
-        return articles
-
-    except Exception as e:
-        print(f"Lỗi khi tìm kiếm tin tức GNews: {e}")
-        st.warning("Không thể lấy tin tức từ GNews.")
+    response = requests.get(url, params=params)
+    if response.status_code != 200:
+        print("❌ Lỗi khi gọi API:", response.status_code)
         return []
+
+    data = response.json()
+    results = []
+    for item in data.get("items", []):
+        results.append({
+            "title": item["title"],
+            "link": item["link"],
+            "snippet": item.get("snippet", "")
+        })
+    return results
 
 def scan_alerts_for_tickers(tickers):
     alerts = []
@@ -560,13 +545,22 @@ elif page == "🤖 Báo cáo Dự báo AI":
         st.warning("Không tìm thấy file báo cáo. Vui lòng chạy `prediction_reporter.py` trước và tải file lên GitHub.")
 
 elif page == "📰 Tin tức Liên quan":
-    st.subheader(f"Tin tức Liên quan đến {selected_ticker}")
-    articles = search_news_with_gnews(selected_ticker)
+    st.subheader(f"📰 Tin tức Liên quan đến {selected_ticker}")
+
+    # Lấy API key từ secrets.toml
+    api_key = st.secrets["GOOGLE_API_KEY"]
+    cx_id = st.secrets["GOOGLE_CX_ID"]
+
+    articles = search_stock_news_with_google(selected_ticker, api_key, cx_id)
+
     if articles:
         for article in articles:
-            st.markdown(f"- [{article['title']}]({article['link']})")
+            st.markdown(f"**{article['title']}**")
+            st.markdown(f"[🔗 Link]({article['link']})")
+            st.caption(article['snippet'])
+            st.markdown("---")
     else:
-        st.info("Không tìm thấy tin tức cho mã này.")
+        st.info("❌ Không tìm thấy tin tức cho mã này.")
 
 # --- START: NEW BACKTESTING PAGE LOGIC ---
 elif page == "🔬 Backtest một mã":
@@ -736,6 +730,7 @@ elif page == "🚨 Cảnh báo":
             scan_alerts_for_tickers(custom_alert_tickers)
         else:
             st.warning("Vui lòng chọn ít nhất một mã cổ phiếu để quét.")
+
 
 
 
