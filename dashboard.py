@@ -119,7 +119,7 @@ def add_technical_indicators(df):
 @st.cache_data(ttl=3600)
 def search_news_with_gnews(ticker):
     """
-    Tìm kiếm tin tức từ GNews API trực tiếp bằng requests.
+    Tìm kiếm tin tức từ GNews API và chỉ lấy từ vietstock.vn hoặc cafef.vn.
     """
     try:
         if "GNEWS_API_KEY" not in st.secrets:
@@ -127,8 +127,8 @@ def search_news_with_gnews(ticker):
             return []
 
         api_key = st.secrets["GNEWS_API_KEY"]
-        query = f'{ticker}'
-        url = f"https://gnews.io/api/v4/search?q={query}&lang=vi&country=vn&max=7&token={api_key}"
+        query = f"{ticker}"
+        url = f"https://gnews.io/api/v4/search?q={query}&lang=vi&country=vn&max=20&token={api_key}"
 
         response = requests.get(url)
         if response.status_code != 200:
@@ -140,10 +140,18 @@ def search_news_with_gnews(ticker):
             st.info(f"Không tìm thấy tin tức liên quan đến {ticker}.")
             return []
 
-        articles = [
-            {"title": article["title"], "link": article["url"]}
-            for article in data["articles"]
-        ]
+        # Lọc chỉ lấy bài từ vietstock.vn hoặc cafef.vn
+        whitelist_domains = ["vietstock.vn", "cafef.vn"]
+        articles = []
+        for article in data["articles"]:
+            if any(domain in article["url"] for domain in whitelist_domains):
+                articles.append({
+                    "title": article["title"],
+                    "link": article["url"]
+                })
+
+        if not articles:
+            st.info("Không tìm thấy bài viết từ vietstock.vn hoặc cafef.vn.")
         return articles
 
     except Exception as e:
@@ -729,4 +737,5 @@ elif page == "🚨 Cảnh báo":
             scan_alerts_for_tickers(custom_alert_tickers)
         else:
             st.warning("Vui lòng chọn ít nhất một mã cổ phiếu để quét.")
+
 
