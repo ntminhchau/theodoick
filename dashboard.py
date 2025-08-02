@@ -117,7 +117,7 @@ def add_technical_indicators(df):
     return df
 
 @st.cache_data(ttl=3600)
-def search_stock_news_with_google(ticker, api_key, cx_id, num=5):
+def search_stock_news_with_google(ticker, api_key, cx_id, num=10):
     query = f"{ticker}"
     url = "https://www.googleapis.com/customsearch/v1"
     params = {
@@ -125,7 +125,8 @@ def search_stock_news_with_google(ticker, api_key, cx_id, num=5):
         "key": api_key,
         "cx": cx_id,
         "num": num,
-        "lr": "lang_vi",  # ưu tiên tiếng Việt
+        "lr": "lang_vi",
+        "sort": "date"  # Ưu tiên tin mới nhất
     }
 
     response = requests.get(url, params=params)
@@ -134,16 +135,31 @@ def search_stock_news_with_google(ticker, api_key, cx_id, num=5):
         return []
 
     data = response.json()
-    print("🔍 JSON Trả về từ Google API:", response.json())
-    st.write(data)
-    
     results = []
+
+    # Thời gian hiện tại
+    now = datetime.now()
+    three_days_ago = now - timedelta(days=3)
+
     for item in data.get("items", []):
+        # Cố gắng trích xuất ngày từ snippet
+        snippet = item.get("snippet", "")
+        match = re.search(r"(\d{1,2}/\d{1,2}/\d{2,4})", snippet)
+        if match:
+            try:
+                date_str = match.group(1)
+                pub_date = datetime.strptime(date_str, "%d/%m/%Y")
+                if pub_date < three_days_ago:
+                    continue  # bỏ qua tin quá cũ
+            except:
+                pass  # Nếu sai định dạng, vẫn cho qua
+
         results.append({
             "title": item["title"],
             "link": item["link"],
-            "snippet": item.get("snippet", "")
+            "snippet": snippet
         })
+
     return results
 
 def scan_alerts_for_tickers(tickers):
@@ -550,24 +566,21 @@ elif page == "🤖 Báo cáo Dự báo AI":
 elif page == "📰 Tin tức Liên quan":
     st.subheader(f"📰 Tin tức Liên quan đến {selected_ticker}")
 
-    # Lấy API key từ secrets.toml
     api_key = st.secrets["GOOGLE_API_KEY"]
     cx_id = st.secrets["GOOGLE_CX_ID"]
 
-    st.write("API Key:", api_key[:6] + "...")
-    st.write("CX ID:", cx_id)
-
     articles = search_stock_news_with_google(selected_ticker, api_key, cx_id)
-    
 
     if articles:
+        st.success(f"✅ Tìm thấy {len(articles)} bài viết trong vòng 3 ngày gần nhất.")
         for article in articles:
-            st.markdown(f"**{article['title']}**")
-            st.markdown(f"[🔗 Link]({article['link']})")
+            st.markdown(f"**📰 {article['title']}**")
+            st.markdown(f"[🔗 Đọc bài viết]({article['link']})", unsafe_allow_html=True)
             st.caption(article['snippet'])
             st.markdown("---")
     else:
-        st.info("❌ Không tìm thấy tin tức cho mã này.")
+        st.info("❌ Không tìm thấy tin tức mới cho mã này trong vòng 3 ngày.")
+
 
 # --- START: NEW BACKTESTING PAGE LOGIC ---
 elif page == "🔬 Backtest một mã":
@@ -737,6 +750,7 @@ elif page == "🚨 Cảnh báo":
             scan_alerts_for_tickers(custom_alert_tickers)
         else:
             st.warning("Vui lòng chọn ít nhất một mã cổ phiếu để quét.")
+
 
 
 
