@@ -572,12 +572,11 @@ elif page == "📰 Tin tức Liên quan":
     articles = search_stock_news_with_google(selected_ticker, api_key, cx_id)
 
     if articles:
-        st.success(f"✅ Tìm thấy {len(articles)} bài viết trong vòng 3 ngày gần nhất.")
         for article in articles:
-            st.markdown(f"**📰 {article['title']}**")
-            st.markdown(f"[🔗 Đọc bài viết]({article['link']})", unsafe_allow_html=True)
-            st.caption(article['snippet'])
-            st.markdown("---")
+            st.markdown(
+                f"[📰 **{article['title']}**]({article['link']})", 
+                unsafe_allow_html=True
+            )
     else:
         st.info("❌ Không tìm thấy tin tức mới cho mã này trong vòng 3 ngày.")
 
@@ -750,6 +749,7 @@ elif page == "🚨 Cảnh báo":
             scan_alerts_for_tickers(custom_alert_tickers)
         else:
             st.warning("Vui lòng chọn ít nhất một mã cổ phiếu để quét.")
+
 
 
 
