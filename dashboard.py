@@ -18,7 +18,6 @@ import re
 from urllib.parse import quote_plus
 import time
 from supabase import create_client
-import gnews
 
 # --- CẤU HÌNH ---
 warnings.filterwarnings('ignore')
@@ -120,35 +119,36 @@ def add_technical_indicators(df):
 @st.cache_data(ttl=3600)
 def search_news_with_gnews(ticker):
     """
-    Tìm kiếm tin tức bằng GNews API - Ổn định và đáng tin cậy hơn.
+    Tìm kiếm tin tức từ GNews API trực tiếp bằng requests.
     """
     try:
         if "GNEWS_API_KEY" not in st.secrets:
             st.error("Lỗi: Không tìm thấy GNEWS_API_KEY trong file secrets.toml.")
             return []
 
-        # Lấy API key từ secrets
         api_key = st.secrets["GNEWS_API_KEY"]
-        gnews_client = gnews.GNews(api_key=api_key)
-        
-        # Tạo câu truy vấn, ưu tiên các trang tin tức tài chính Việt Nam
-        query = f'"{ticker}" (site:vietstock.vn OR site:cafef.vn OR site:fireant.vn OR site-baodautu.vn)'
-        
-        # Tìm kiếm tin tức bằng tiếng Việt, giới hạn 7 bài
-        articles_raw = gnews_client.get_news(query, language='vi', country='VN', max_results=7)
-        
-        # Định dạng lại kết quả cho phù hợp
-        articles = []
-        for item in articles_raw:
-            articles.append({
-                'title': item['title'],
-                'link': item['url']
-            })
+        query = f'{ticker}'
+        url = f"https://gnews.io/api/v4/search?q={query}&lang=vi&country=vn&max=7&token={api_key}"
+
+        response = requests.get(url)
+        if response.status_code != 200:
+            st.warning(f"Lỗi GNews API: {response.status_code}")
+            return []
+
+        data = response.json()
+        if "articles" not in data or len(data["articles"]) == 0:
+            st.info(f"Không tìm thấy tin tức liên quan đến {ticker}.")
+            return []
+
+        articles = [
+            {"title": article["title"], "link": article["url"]}
+            for article in data["articles"]
+        ]
         return articles
+
     except Exception as e:
-        # Xử lý các lỗi có thể xảy ra khi gọi API
-        print(f"Lỗi khi tìm kiếm tin tức trên GNews cho {ticker}: {e}")
-        st.warning("Không thể lấy tin tức từ GNews. Có thể đã hết lượt truy cập miễn phí trong ngày.")
+        print(f"Lỗi khi tìm kiếm tin tức GNews: {e}")
+        st.warning("Không thể lấy tin tức từ GNews.")
         return []
 
 def scan_alerts_for_tickers(tickers):
@@ -729,3 +729,4 @@ elif page == "🚨 Cảnh báo":
             scan_alerts_for_tickers(custom_alert_tickers)
         else:
             st.warning("Vui lòng chọn ít nhất một mã cổ phiếu để quét.")
+
