@@ -134,6 +134,7 @@ def search_stock_news_with_google(ticker, api_key, cx_id, num=5):
         return []
 
     data = response.json()
+    print("🔍 JSON Trả về từ Google API:", response.json())
     st.write(data)
     
     results = []
@@ -736,6 +737,7 @@ elif page == "🚨 Cảnh báo":
             scan_alerts_for_tickers(custom_alert_tickers)
         else:
             st.warning("Vui lòng chọn ít nhất một mã cổ phiếu để quét.")
+
 
 
 
