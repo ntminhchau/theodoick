@@ -119,7 +119,8 @@ def add_technical_indicators(df):
 @st.cache_data(ttl=3600)
 def search_news_with_gnews(ticker):
     """
-    Tìm kiếm tin tức từ GNews API và chỉ lấy từ vietstock.vn hoặc cafef.vn.
+    Tìm kiếm tin tức tiếng Việt liên quan đến chứng khoán/tài chính bằng GNews.
+    Không giới hạn domain.
     """
     try:
         if "GNEWS_API_KEY" not in st.secrets:
@@ -127,8 +128,10 @@ def search_news_with_gnews(ticker):
             return []
 
         api_key = st.secrets["GNEWS_API_KEY"]
-        query = f"{ticker}"
-        url = f"https://gnews.io/api/v4/search?q={query}&lang=vi&country=vn&max=20&token={api_key}"
+
+        # Truy vấn thông minh: ticker + lĩnh vực tài chính
+        query = f'"{ticker}" AND (chứng khoán OR cổ phiếu OR tài chính OR thị trường)'
+        url = f"https://gnews.io/api/v4/search?q={requests.utils.quote(query)}&lang=vi&country=vn&max=20&token={api_key}"
 
         response = requests.get(url)
         if response.status_code != 200:
@@ -137,20 +140,11 @@ def search_news_with_gnews(ticker):
 
         data = response.json()
         if "articles" not in data or len(data["articles"]) == 0:
-            st.info(f"Không tìm thấy tin tức liên quan đến {ticker}.")
+            st.info(f"Không tìm thấy tin tức tiếng Việt liên quan đến {ticker}.")
             return []
 
-        # Chỉ lấy bài từ baodautu.vn
-        articles = []
-        for article in data["articles"]:
-            if "baodautu.vn" in article["url"]:
-                articles.append({
-                    "title": article["title"],
-                    "link": article["url"]
-                })
-
-        if not articles:
-            st.info(f"Không tìm thấy bài viết từ baodautu.vn cho {ticker}.")
+        # Lấy tất cả bài tiếng Việt
+        articles = [{"title": a["title"], "link": a["url"]} for a in data["articles"]]
         return articles
 
     except Exception as e:
@@ -736,6 +730,7 @@ elif page == "🚨 Cảnh báo":
             scan_alerts_for_tickers(custom_alert_tickers)
         else:
             st.warning("Vui lòng chọn ít nhất một mã cổ phiếu để quét.")
+
 
 
 
