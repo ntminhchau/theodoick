@@ -134,6 +134,8 @@ def search_stock_news_with_google(ticker, api_key, cx_id, num=5):
         return []
 
     data = response.json()
+    st.write(data)
+    
     results = []
     for item in data.get("items", []):
         results.append({
@@ -551,7 +553,11 @@ elif page == "📰 Tin tức Liên quan":
     api_key = st.secrets["GOOGLE_API_KEY"]
     cx_id = st.secrets["GOOGLE_CX_ID"]
 
+    st.write("API Key:", api_key[:6] + "...")
+    st.write("CX ID:", cx_id)
+
     articles = search_stock_news_with_google(selected_ticker, api_key, cx_id)
+    
 
     if articles:
         for article in articles:
@@ -730,6 +736,7 @@ elif page == "🚨 Cảnh báo":
             scan_alerts_for_tickers(custom_alert_tickers)
         else:
             st.warning("Vui lòng chọn ít nhất một mã cổ phiếu để quét.")
+
 
 
 
