@@ -118,7 +118,7 @@ def add_technical_indicators(df):
 
 @st.cache_data(ttl=3600)
 def search_stock_news_with_google(ticker, api_key, cx_id, num=5):
-    query = f"{ticker} cổ phiếu"
+    query = f"{ticker}"
     url = "https://www.googleapis.com/customsearch/v1"
     params = {
         "q": query,
@@ -730,6 +730,7 @@ elif page == "🚨 Cảnh báo":
             scan_alerts_for_tickers(custom_alert_tickers)
         else:
             st.warning("Vui lòng chọn ít nhất một mã cổ phiếu để quét.")
+
 
 
 
