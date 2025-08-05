@@ -464,11 +464,19 @@ st.header(f"Tổng quan: {selected_ticker}")
 price_info = get_yfinance_realtime_quote(selected_ticker) 
 if price_info:
     col1, col2, col3, col4 = st.columns([2, 2, 3, 3])
-    price_str = f"{price_info['price']:,.1f}"
-    change_str = f"{price_info['change']:,.1f} ({price_info['pct_change']:.2f}%)"
+    
+    # Chia 1,000 để đổi đơn vị sang nghìn đồng
+    price = price_info['price'] / 1000
+    open_price = price_info['open'] / 1000
+    high = price_info['high'] / 1000
+    low = price_info['low'] / 1000
+
+    price_str = f"{price:,.1f}"
+    change_str = f"{price_info['change'] / 1000:,.1f} ({price_info['pct_change']:.2f}%)"
+
     col1.metric("Giá", price_str, change_str)
-    col2.metric("Mở cửa", f"{price_info['open']:,.1f}")
-    col3.metric("Cao/Thấp", f"{price_info['high']:,.1f} / {price_info['low']:,.1f}")
+    col2.metric("Mở cửa", f"{open_price:,.1f}")
+    col3.metric("Cao/Thấp", f"{high:,.1f} / {low:,.1f}")
     col4.metric("KLGD", f"{price_info['volume']:,.0f}")
 else:
     st.warning(f"Không thể lấy thông tin giá gần nhất cho {selected_ticker}.")
@@ -776,6 +784,7 @@ elif page == "🚨 Cảnh báo":
             scan_alerts_for_tickers(custom_alert_tickers)
         else:
             st.warning("Vui lòng chọn ít nhất một mã cổ phiếu để quét.")
+
 
 
 
