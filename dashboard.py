@@ -18,6 +18,7 @@ import re
 from urllib.parse import quote_plus
 import time
 from supabase import create_client
+import yfinance as yf
 
 # --- CẤU HÌNH ---
 warnings.filterwarnings('ignore')
@@ -97,6 +98,43 @@ def get_last_price_info(ticker):
     pct_change = (change / prev_day['Close']) * 100 if prev_day['Close'] > 0 else 0
     return {'price': price, 'change': change, 'pct_change': pct_change, 'open': last_day['Open'], 'high': last_day['High'], 'low': last_day['Low'], 'volume': last_day['Volume']}
 
+@st.cache_data(ttl=60) # Cache trong 60 giây
+def get_yfinance_realtime_quote(ticker):
+    """
+    Lấy dữ liệu giá gần real-time từ Yahoo Finance.
+    """
+    try:
+        # Chuẩn hóa ticker cho Yahoo Finance (ví dụ: FPT -> FPT.VN)
+        # Giả định các mã 3 ký tự là của HOSE/HNX
+        ticker_yf = ticker.upper()
+        if len(ticker_yf) == 3:
+            ticker_yf += ".VN"
+
+        # Tải dữ liệu từ yfinance
+        stock = yf.Ticker(ticker_yf)
+        
+        # .fast_info là cách nhanh để lấy các thông tin chính
+        info = stock.fast_info
+
+        # Tính toán các giá trị cần thiết
+        price = info.get('last_price')
+        prev_close = info.get('previous_close')
+        change = price - prev_close
+        pct_change = (change / prev_close) * 100 if prev_close > 0 else 0
+        
+        return {
+            'price': price,
+            'change': change,
+            'pct_change': pct_change,
+            'open': info.get('open'),
+            'high': info.get('day_high'),
+            'low': info.get('day_low'),
+            'volume': info.get('volume')
+        }
+    except Exception as e:
+        print(f"Lỗi khi lấy dữ liệu từ yfinance cho {ticker}: {e}")
+        return None
+        
 @st.cache_data
 def add_technical_indicators(df):
     """Thêm các chỉ báo kỹ thuật."""
@@ -110,10 +148,7 @@ def add_technical_indicators(df):
     df.ta.adx(length=14, append=True)
     df.ta.bbands(length=20, append=True)
     df['Highest_High_20'] = df['High'].rolling(20).max()
-    psar = ta.psar(high=df["High"], low=df["Low"], close=df["Close"])
-    df["SAR"] = psar["PSARl_0.02_0.2"]
 
-    
     return df
 
 @st.cache_data(ttl=3600)
@@ -430,7 +465,7 @@ df_all_predictions = get_all_predictions_from_db()
 
 # --- HEADER THÔNG TIN CHUNG ---
 st.header(f"Tổng quan: {selected_ticker}")
-price_info = get_last_price_info(selected_ticker)
+price_info = get_yfinance_realtime_quote(selected_ticker) 
 if price_info:
     col1, col2, col3, col4 = st.columns([2, 2, 3, 3])
     price_str = f"{price_info['price']:,.1f}"
@@ -459,7 +494,6 @@ st.divider()
 
 # --- HIỂN THỊ NỘI DUNG TƯƠNG ỨNG VỚI LỰA CHỌN TRÊN SIDEBAR ---
 
-# ✨ THAY THẾ TOÀN BỘ KHỐI CODE NÀY
 if page == "📊 Phân tích Kỹ thuật":
     st.subheader("Biểu đồ Phân tích Kỹ thuật Toàn diện")
 
@@ -495,9 +529,6 @@ if page == "📊 Phân tích Kỹ thuật":
         # Bollinger Bands (BOLL)
         fig.add_trace(go.Scatter(x=data_ind.index, y=data_ind.get('BBU_20_2.0'), mode='lines', name='Bollinger Upper', line=dict(color='gray', width=1, dash='dash')))
         fig.add_trace(go.Scatter(x=data_ind.index, y=data_ind.get('BBL_20_2.0'), mode='lines', name='Bollinger Lower', line=dict(color='gray', width=1, dash='dash'), fill='tonexty', fillcolor='rgba(128,128,128,0.1)'))
-
-        # Parabolic SAR (SAR)
-        fig.add_trace(go.Scatter(x=data_ind.index, y=data_ind.get('SAR_0.02_0.2'), mode='markers', name='SAR', marker=dict(color='purple', size=3)), row=1, col=1)
 
         # --- Subplot 2: MACD ---
 
@@ -749,6 +780,7 @@ elif page == "🚨 Cảnh báo":
             scan_alerts_for_tickers(custom_alert_tickers)
         else:
             st.warning("Vui lòng chọn ít nhất một mã cổ phiếu để quét.")
+
 
 
 
