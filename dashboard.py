@@ -104,32 +104,29 @@ def get_yfinance_realtime_quote(ticker):
     Lấy dữ liệu giá gần real-time từ Yahoo Finance.
     """
     try:
-        # Chuẩn hóa ticker cho Yahoo Finance (ví dụ: FPT -> FPT.VN)
-        # Giả định các mã 3 ký tự là của HOSE/HNX
         ticker_yf = ticker.upper()
         if len(ticker_yf) == 3:
             ticker_yf += ".VN"
 
-        # Tải dữ liệu từ yfinance
         stock = yf.Ticker(ticker_yf)
-        
-        # .fast_info là cách nhanh để lấy các thông tin chính
         info = stock.fast_info
+       
+        print("Fast info dump:", dict(info))
 
-        # Tính toán các giá trị cần thiết
-        price = info.get('last_price')
-        prev_close = info.get('previous_close')
+        # Bắt buộc truy cập để kích hoạt lazy-load
+        price = float(info['last_price'])
+        prev_close = float(info['previous_close'])
         change = price - prev_close
         pct_change = (change / prev_close) * 100 if prev_close > 0 else 0
-        
+
         return {
             'price': price,
             'change': change,
             'pct_change': pct_change,
-            'open': info.get('open'),
-            'high': info.get('day_high'),
-            'low': info.get('day_low'),
-            'volume': info.get('volume')
+            'open': float(info['open']),
+            'high': float(info['day_high']),
+            'low': float(info['day_low']),
+            'volume': int(info['volume'])
         }
     except Exception as e:
         print(f"Lỗi khi lấy dữ liệu từ yfinance cho {ticker}: {e}")
@@ -780,6 +777,7 @@ elif page == "🚨 Cảnh báo":
             scan_alerts_for_tickers(custom_alert_tickers)
         else:
             st.warning("Vui lòng chọn ít nhất một mã cổ phiếu để quét.")
+
 
 
 
