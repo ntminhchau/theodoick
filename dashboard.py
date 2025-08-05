@@ -110,8 +110,7 @@ def get_yfinance_realtime_quote(ticker):
 
         stock = yf.Ticker(ticker_yf)
         info = stock.fast_info
-       
-        print("Fast info dump:", dict(info))
+    
 
         # Bắt buộc truy cập để kích hoạt lazy-load
         price = float(info['last_price'])
@@ -126,7 +125,7 @@ def get_yfinance_realtime_quote(ticker):
             'open': float(info['open']),
             'high': float(info['day_high']),
             'low': float(info['day_low']),
-            'volume': int(info['volume'])
+            'volume': int(info['lastVolume'])
         }
     except Exception as e:
         print(f"Lỗi khi lấy dữ liệu từ yfinance cho {ticker}: {e}")
@@ -777,6 +776,7 @@ elif page == "🚨 Cảnh báo":
             scan_alerts_for_tickers(custom_alert_tickers)
         else:
             st.warning("Vui lòng chọn ít nhất một mã cổ phiếu để quét.")
+
 
 
 
