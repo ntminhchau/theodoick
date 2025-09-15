@@ -1,6 +1,6 @@
 streamlit==1.47.1
 pandas
-pandas_ta==0.3.14b0
+pandas_ta
 requests
 beautifulsoup4==4.13.4
 transformers==4.54.0
@@ -13,4 +13,5 @@ scikit-learn==1.7.1
 setuptools
 vnstock
 yfinance
+
 
