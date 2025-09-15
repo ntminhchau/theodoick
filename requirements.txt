@@ -8,10 +8,11 @@ plotly==6.2.0
 backtesting==0.6.4
 supabase
 gnews
-numpy==1.26.4
+numpy
 scikit-learn==1.7.1
 setuptools
 vnstock
 yfinance
+
 
 
